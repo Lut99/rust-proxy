@@ -1,4 +1,6 @@
 [workspace]
 members = [
-    "proxy"
+    "proxy-lang",
+
+    "proxy",
 ]

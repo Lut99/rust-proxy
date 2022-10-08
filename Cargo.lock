@@ -3,5 +3,12 @@
 version = 3
 
 [[package]]
+name = "proxy-lang"
+version = "0.1.0"
+
+[[package]]
 name = "rust-proxy"
 version = "0.1.0"
+dependencies = [
+ "proxy-lang",
+]

@@ -5,3 +5,4 @@ edition = "2021"
 authors = [ "Lut99" ]
 
 [dependencies]
+proxy-lang = { path = "../proxy-lang" }

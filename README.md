@@ -22,6 +22,38 @@ The URL on the lefthand-side can be fairly complex to match any URL. In fact, it
 Similarly, the righthand-side can be used to 'generate' a new URL. While this is not full regex, it does use the same syntax as VS Code to use matched blocks; any (non-nested) parenthesis in the key can be accessed by using `$x` in the value, where `x` is the index of the group in the regex.
 
 For example:
+```proxy-cfg
+[mappings]
+# Redirects this specific URL to port 80 (url is preserved)
+http://test.nl -> :80
+
+# Redirects this specific URL to port 443
+https://test.nl -> :443
+
+# Redirects this URL with traffic coming in on port 80 to port 443
+http://test.nl:80 -> :443
+
+# Redirects all requests on port 80 to the given URL (port is preserved)
+:80 -> http://test.nl
+
+# Redirects everything
+http://test.nl:80 -> https://test.nl:443
+
+# Use a wildcard to match anything missing
+http://*.nl -> https://*.nl
+
+# Use multiple wildcards (they are matched based on their orderings)
+http://*.* -> https://*.*
+
+# Use multiple wildcards but named
+http://*1.*2 -> https://*2.*1
+
+# Determines what happens with the default values
+#DEFAULT -> !ERR 404
+```
+
+
+For example:
 ```toml
 [mappings]
 # Redirects this specific URL to port 80
