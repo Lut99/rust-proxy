@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 22:12:02
 //  Last edited:
-//    11 Oct 2022, 18:22:22
+//    11 Oct 2022, 23:31:21
 //  Auto updated?
 //    Yes
 // 
@@ -17,10 +17,102 @@ use std::fmt::Debug;
 
 use nom_locate::LocatedSpan;
 
+use crate::tokens::Token;
+
 
 /***** LIBRARY *****/
 /// Defines the input used to the scanner.
 pub type Input<'a> = LocatedSpan<&'a str>;
+
+/// List of tokens used in the parser.
+#[derive(Clone, Debug)]
+pub struct TokenList {
+    /// The actual tokens
+    tokens : Vec<Token>,
+}
+
+impl TokenList {
+    /// Constructor for the TokenList that initializes it from the given tokens.
+    /// 
+    /// # Arguments
+    /// - `tokens`: The tokens to initialize ourselves with.
+    /// 
+    /// # Returns
+    /// A new TokenList instance.
+    #[inline]
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens,
+        }
+    }
+
+
+
+    /// Returns the number of tokens in this list.
+    #[inline]
+    pub fn len(&self) -> usize { self.tokens.len() }
+
+    /// Returns whether this list has any tokens in it or not.
+    #[inline]
+    pub fn is_empty(&self) -> bool { self.tokens.is_empty() }
+
+
+
+    /// Returns an iterator over the reference of this list.
+    #[inline]
+    pub fn iter(&self) -> std::slice::Iter<Token> { self.into_iter() }
+
+    /// Returns a (mutable) iterator over the reference of this list.
+    #[inline]
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<Token> { self.into_iter() }
+}
+
+impl nom::InputLength for TokenList {
+    fn input_len(&self) -> usize {
+        self.tokens.len()
+    }
+}
+
+impl IntoIterator for TokenList {
+    type Item     = Token;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.tokens.into_iter()
+    }
+}
+impl<'a> IntoIterator for &'a TokenList {
+    type Item     = &'a Token;
+    type IntoIter = std::slice::Iter<'a, Token>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.tokens.iter()
+    }
+}
+impl<'a> IntoIterator for &'a mut TokenList {
+    type Item     = &'a mut Token;
+    type IntoIter = std::slice::IterMut<'a, Token>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.tokens.iter_mut()
+    }
+}
+
+impl From<TokenList> for Vec<Token> {
+    #[inline]
+    fn from(value: TokenList) -> Self {
+        value.tokens
+    }
+}
+impl From<&TokenList> for Vec<Token> {
+    #[inline]
+    fn from(value: &TokenList) -> Self {
+        value.tokens.clone()
+    }
+}
 
 
 

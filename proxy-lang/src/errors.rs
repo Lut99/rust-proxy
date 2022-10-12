@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 21:50:04
 //  Last edited:
-//    11 Oct 2022, 18:22:19
+//    11 Oct 2022, 23:21:10
 //  Auto updated?
 //    Yes
 // 
@@ -19,6 +19,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
 
 use console::style;
+
+use crate::spec::TokenList;
 
 
 /***** HELPER MACROS *****/
@@ -136,6 +138,39 @@ impl PrettyError for ScanError {
         match self {
             ReaderReadError{ .. } => error!(f, "{}", self),
             ScanError{ .. }       => error!(f, "{}", self),
+        }
+    }
+}
+
+
+
+/// Defines errors that may occur during parsing.
+#[derive(Debug)]
+pub enum ParseError {
+    /// Failed to read the given reader as source text.
+    NonEmptyTokenList{ remain: TokenList },
+    /// Failed to parse (nom error)
+    ParseError{ err: nom::Err<nom::error::VerboseError<TokenList>> },
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        use self::ParseError::*;
+        match self {
+            NonEmptyTokenList{ remain } => write!(f, "Failed to parse all tokens (remaining: {})", remain.iter().map(|t| format!("{}", t)).collect::<Vec<String>>().join(", ")),
+            ParseError{ err }           => write!(f, "Syntax error: {}", err),
+        }
+    }
+}
+
+impl Error for ParseError {}
+
+impl PrettyError for ParseError {
+    fn prettyprint_plain(&self, f: &mut Formatter<'_>) -> FResult {
+        use self::ParseError::*;
+        match self {
+            NonEmptyTokenList{ .. } => error!(f, "{}", self),
+            ParseError{ .. }        => error!(f, "{}", self),
         }
     }
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 21:48:58
 //  Last edited:
-//    08 Oct 2022, 23:00:22
+//    11 Oct 2022, 23:03:56
 //  Auto updated?
 //    Yes
 // 
@@ -20,6 +20,7 @@ pub mod spec;
 pub mod tokens;
 pub mod ast;
 pub mod scanner;
+pub mod parser;
 
 // Declare test modules
 #[cfg(test)]
