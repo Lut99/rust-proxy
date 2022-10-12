@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 22:12:02
 //  Last edited:
-//    07 Oct 2022, 22:33:59
+//    11 Oct 2022, 18:22:22
 //  Auto updated?
 //    Yes
 // 
@@ -15,8 +15,15 @@
 
 use std::fmt::Debug;
 
+use nom_locate::LocatedSpan;
+
 
 /***** LIBRARY *****/
+/// Defines the input used to the scanner.
+pub type Input<'a> = LocatedSpan<&'a str>;
+
+
+
 /// Defines a position in the source text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TextPos {
@@ -40,6 +47,49 @@ impl TextPos {
         )
     }
 
+    /// Constructor for the TextPos that initializes it pointing to the _first_ character of the given span.
+    /// 
+    /// # Arguments
+    /// - `input`: The Input span to take the initial position from.
+    /// 
+    /// # Returns
+    /// A new TextPos instance.
+    /// 
+    /// # Panics
+    /// This function panics if the given span was empty.
+    pub fn start_of<'a>(input: &Input<'a>) -> Self {
+        if input.is_empty() { panic!("Cannot call `TextPos::start_of()` on empty Input"); }
+        Self::Some(input.location_line() as usize, input.get_column())
+    }
+
+    /// Constructor for the TextPos that initializes it pointing to the _last_ character of the given span.
+    /// 
+    /// # Arguments
+    /// - `input`: The Input span to take the last position from.
+    /// 
+    /// # Returns
+    /// A new TextPos instance.
+    /// 
+    /// # Panics
+    /// This function panics if the given span was empty.
+    pub fn end_of<'a>(input: &Input<'a>) -> Self {
+        if input.is_empty() { panic!("Cannot call `TextPos::end_of()` on empty Input"); }
+
+        // Get the starting position and move to the end of the thing
+        let (mut line, mut col): (usize, usize) = (input.location_line() as usize, input.get_column());
+        for c in input.fragment().chars().skip(1) {
+            if c == '\n' {
+                line += 1;
+                col   = 1;
+            } else {
+                col += 1;
+            }
+        }
+
+        // Done, use that as self
+        Self::Some(line, col)
+    }
+
 
 
     /// Updates the line number stored within this TextPos.
@@ -49,7 +99,7 @@ impl TextPos {
     /// # Arguments
     /// - `new_line`: The new line number to update the TextPos to.
     #[inline]
-    pub fn set_ln(&mut self, new_line: usize) { if let TextPos::Some(line, _) = self { *line = new_line } }
+    pub fn set_line(&mut self, new_line: usize) { if let TextPos::Some(line, _) = self { *line = new_line } }
 
     /// Updates the column number stored within this TextPos.
     /// 
@@ -64,7 +114,7 @@ impl TextPos {
 
     /// Returns the line number stored within this TextPos, if any.
     #[inline]
-    pub fn ln(&self) -> Option<usize> { if let TextPos::Some(line, _) = self { Some(*line) } else { None } }
+    pub fn line(&self) -> Option<usize> { if let TextPos::Some(line, _) = self { Some(*line) } else { None } }
 
     /// Returns the column number stored within this TextPos, if any.
     #[inline]
@@ -125,6 +175,20 @@ impl TextRange {
     /// Returns the column number stored within this TextRange, if any. If none, then returns `TextPos::None`.
     #[inline]
     pub fn end(&self) -> TextPos { if let TextRange::Some(_, stop) = self { *stop } else { TextPos::None } }
+}
+
+impl<'a> From<Input<'a>> for TextRange {
+    #[inline]
+    fn from(value: Input<'a>) -> TextRange {
+        TextRange::from(&value)
+    }
+}
+
+impl<'a> From<&Input<'a>> for TextRange {
+    #[inline]
+    fn from(value: &Input<'a>) -> TextRange {
+        TextRange::Some(TextPos::start_of(value), TextPos::end_of(value))
+    }
 }
 
 
