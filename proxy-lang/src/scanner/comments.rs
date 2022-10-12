@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:54:53
 //  Last edited:
-//    11 Oct 2022, 18:27:53
+//    11 Oct 2022, 22:45:20
 //  Auto updated?
 //    Yes
 // 
@@ -56,7 +56,7 @@ fn scan_singleline<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -
     comb::value(
         (),
         seq::preceded(
-            bc::tag("// "),
+            bc::tag("//"),
             multi::many_till(
                 seq::pair(
                     comb::not(branch::alt((
@@ -88,7 +88,7 @@ fn scan_multiline<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) ->
     comb::value(
         (),
         seq::preceded(
-            bc::tag("/* "),
+            bc::tag("/*"),
             multi::many_till(
                 seq::pair(
                     comb::not(bc::tag("*/")),

@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:33:31
 //  Last edited:
-//    11 Oct 2022, 18:29:00
+//    11 Oct 2022, 22:49:27
 //  Auto updated?
 //    Yes
 // 
@@ -25,12 +25,16 @@ pub enum Token {
     Section(String, TextRange),
     /// Some action
     Action(String, TextRange),
+    /// Any protocol (e.g., `http://`)
+    Protocol(String, TextRange),
     /// Any identifier / word / path element / w/e
     Identifier(String, TextRange),
     /// A port number (unparsed as of yet)
     Port(String, TextRange),
     /// An aterisk, possibly named.
     Aterisk(Option<String>, TextRange),
+    /// A string literal
+    String(String, TextRange),
 
     /// The arrow `->` symbol
     Arrow(TextRange),
@@ -48,9 +52,11 @@ impl Display for Token {
         match self {
             Section(sec, _)   => write!(f, "SECTION<{}>", sec),
             Action(act, _)    => write!(f, "ACTION<{}>", act),
+            Protocol(prot, _) => write!(f, "PROTOCOL<{}>", prot),
             Identifier(id, _) => write!(f, "IDENTIFIER<{}>", id),
             Port(port, _)     => write!(f, "PORT<{}>", port),
-            Aterisk(name, _)  => write!(f, "ATERISK{}", if let Some(name) = name { format!("<{}>", name) } else { String::new() }),
+            Aterisk(name, _)  => write!(f, "ATERISK{}", if let Some(name) = name { format!("<{}>", name) } else { std::string::String::new() }),
+            String(val, _)    => write!(f, "STRING<\"{}\">", val),
 
             Arrow(_) => write!(f, "ARROW"),
             Colon(_) => write!(f, "COLON"),
@@ -66,9 +72,11 @@ impl Node for Token {
         match self {
             Section(_, range)    => *range,
             Action(_, range)     => *range,
+            Protocol(_, range)   => *range,
             Identifier(_, range) => *range,
             Port(_, range)       => *range,
             Aterisk(_, range)    => *range,
+            String(_, range)     => *range,
 
             Arrow(range) => *range,
             Colon(range) => *range,

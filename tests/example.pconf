@@ -20,8 +20,11 @@ http://*.nl -> https://*.nl
 // Use multiple wildcards (they are matched based on their orderings)
 http://*.* -> https://*.*
 
-// Use multiple wildcards but named
+// Use multiple wildcards but named (can only be a single digit)
 http://*1.*2 -> https://*2.*1
 
+// Escape wildcards
+http://**123.nl -> http://123.nl
+
 // Determines what happens with the default values
-default -> !ERR 404
+default -> !ERR 404 "Uh-oh! Not found"
