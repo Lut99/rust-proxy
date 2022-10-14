@@ -4,7 +4,7 @@
 //  Created:
 //    11 Oct 2022, 13:14:06
 //  Last edited:
-//    11 Oct 2022, 18:04:54
+//    14 Oct 2022, 10:42:21
 //  Auto updated?
 //    Yes
 // 
@@ -35,7 +35,12 @@ pub fn scan<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResu
     branch::alt((
         comb::map(bc::tag("->"), |t| Token::Arrow(TextRange::from(t))),
         comb::map(bc::tag(":"),  |t| Token::Colon(TextRange::from(t))),
+        comb::map(bc::tag("["),  |t| Token::LSquare(TextRange::from(t))),
+        comb::map(bc::tag("]"),  |t| Token::RSquare(TextRange::from(t))),
+        comb::map(bc::tag("{"),  |t| Token::LCurly(TextRange::from(t))),
+        comb::map(bc::tag("}"),  |t| Token::RCurly(TextRange::from(t))),
         comb::map(bc::tag("/"),  |t| Token::Slash(TextRange::from(t))),
         comb::map(bc::tag("."),  |t| Token::Dot(TextRange::from(t))),
+        comb::map(bc::tag(","),  |t| Token::Comma(TextRange::from(t))),
     ))(input)
 }

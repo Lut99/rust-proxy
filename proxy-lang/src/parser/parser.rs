@@ -4,7 +4,7 @@
 //  Created:
 //    11 Oct 2022, 23:04:50
 //  Last edited:
-//    11 Oct 2022, 23:32:54
+//    12 Oct 2022, 15:41:06
 //  Auto updated?
 //    Yes
 // 
@@ -33,10 +33,10 @@ use crate::parser::areas;
 /// 
 /// # Errors
 /// A nom error if we failed (either because no parser matched or because there was a genuine error).
-fn parse_config<'a, E: nom::error::ParseError<TokenList>>(input: TokenList) -> IResult<TokenList, Config, E> {
+fn parse_config<'a, E: nom::error::ParseError<TokenList>>(input: &'a [Token]) -> IResult<TokenList, Config, E> {
     comb::map(
         branch::alt((
-            multi::many0(areas::parse),
+            multi::many0(areas::parse_settings),
         )),
         |patterns: Vec<Pattern>| {
             Config {

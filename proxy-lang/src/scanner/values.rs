@@ -4,7 +4,7 @@
 //  Created:
 //    11 Oct 2022, 13:25:46
 //  Last edited:
-//    11 Oct 2022, 23:02:31
+//    13 Oct 2022, 10:16:47
 //  Auto updated?
 //    Yes
 // 
@@ -28,12 +28,6 @@ mod tests {
 
     #[test]
     fn test_values() {
-        // Attempt to parse some section stuff
-        assert_eq!(scan::<nom::error::Error<Input>>(input!("[hello]")).ok(), Some((input!("", 7), Token::Section("hello".into(), range!(1:1 - 1:7)))));
-        assert_eq!(scan::<nom::error::Error<Input>>(input!("[HelLo]")).ok(), Some((input!("", 7), Token::Section("HelLo".into(), range!(1:1 - 1:7)))));
-        assert_eq!(scan::<nom::error::Error<Input>>(input!("[HelLo42]")).ok(), Some((input!("", 9), Token::Section("HelLo42".into(), range!(1:1 - 1:9)))));
-        assert_eq!(scan::<nom::error::Error<Input>>(input!("[]")).is_err(), true);
-
         // Attempt to parse some action stuff
         assert_eq!(scan::<nom::error::Error<Input>>(input!("!hello")).ok(), Some((input!("", 6), Token::Action("hello".into(), range!(1:1 - 1:6)))));
         assert_eq!(scan::<nom::error::Error<Input>>(input!("!HelLo")).ok(), Some((input!("", 6), Token::Action("HelLo".into(), range!(1:1 - 1:6)))));
@@ -79,13 +73,12 @@ mod tests {
         assert_eq!(scan::<nom::error::Error<Input>>(input!("\"Tes\\\\t\"")).ok(), Some((input!("", 8), Token::String("Tes\\t".into(), range!(1:1 - 1:8)))));
 
         // Do some mix and match
-        let tokens: Vec<Token> = crate::scanner::scan("<test>", "http ftp\n\n// Cool!!!!!\n [sec]   \t   42 ssh\n 65535 /* epic */ 42".as_bytes()).unwrap();
+        let tokens: Vec<Token> = crate::scanner::scan("<test>", "http ftp\n\n// Cool!!!!!\n    \t   42 ssh\n 65535 /* epic */ 42".as_bytes()).unwrap();
         assert_eq!(tokens, vec![
             Token::Identifier("http".into(), range!(1:1 - 1:4)),
             Token::Identifier("ftp".into(), range!(1:6 - 1:8)),
-            Token::Section("sec".into(), range!(4:2 - 4:6)),
-            Token::Port("42".into(), range!(4:14 - 4:15)),
-            Token::Identifier("ssh".into(), range!(4:17 - 4:19)),
+            Token::Port("42".into(), range!(4:9 - 4:10)),
+            Token::Identifier("ssh".into(), range!(4:12 - 4:14)),
             Token::Port("65535".into(), range!(5:2 - 5:6)),
             Token::Port("42".into(), range!(5:19 - 5:20)),
         ]);
@@ -97,26 +90,6 @@ mod tests {
 
 
 /***** HELPER FUNCTIONS *****/
-/// Scans a section header.
-/// 
-/// # Arguments
-/// - `input`: The Input to scan.
-/// 
-/// # Returns
-/// The parsed `Token`.
-/// 
-/// # Errors
-/// This function may error if nom failed to scan a section header.
-fn scan_section<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token, E> {
-    comb::map(
-        seq::tuple((bc::tag("["), comb::cut(cc::alphanumeric1), comb::cut(bc::tag("]")))),
-        |(l, name, r): (Input, Input, Input)| {
-            // Return that as a token
-            Token::Section((*name.fragment()).into(), TextRange::new(TextPos::start_of(&l), TextPos::end_of(&r)))
-        },
-    )(input)
-}
-
 /// Scans an action.
 /// 
 /// # Arguments
@@ -250,6 +223,8 @@ fn scan_aterisk<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> I
     )(input)
 }
 
+
+
 /// Scans a string literal.
 /// 
 /// # Arguments
@@ -302,6 +277,66 @@ fn scan_string<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IR
     )(input)
 }
 
+/// Scans an (unsinged) integer literal.
+/// 
+/// # Arguments
+/// - `input`: The Input to scan.
+/// 
+/// # Returns
+/// The parsed `Token`.
+/// 
+/// # Errors
+/// This function may error if nom failed to scan an integer.
+fn scan_uint<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token, E> {
+    comb::map(
+        cc::digit1,
+        |digits: Input| {
+            Token::UInt((*digits.fragment()).into(), TextRange::from(digits))
+        }
+    )(input)
+}
+
+/// Scans a(n) (signed) integer literal.
+/// 
+/// # Arguments
+/// - `input`: The Input to scan.
+/// 
+/// # Returns
+/// The parsed `Token`.
+/// 
+/// # Errors
+/// This function may error if nom failed to scan an integer.
+fn scan_sint<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token, E> {
+    comb::map(
+        seq::tuple((multi::many1(bc::tag("-")), cc::digit1)),
+        |(signs, digits): (Vec<Input>, Input)| {
+            Token::UInt(format!("{}{}", signs.iter().map(|s| *s.fragment()).collect::<String>(), digits.fragment()), TextRange::new(TextPos::start_of(&signs[0]), TextPos::end_of(&digits)))
+        }
+    )(input)
+}
+
+/// Scans a boolean literal.
+/// 
+/// # Arguments
+/// - `input`: The Input to scan.
+/// 
+/// # Returns
+/// The parsed `Token`.
+/// 
+/// # Errors
+/// This function may error if nom failed to scan a boolean.
+fn scan_bool<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token, E> {
+    comb::map(
+        branch::alt((
+            bc::tag("true"),
+            bc::tag("false"),
+        )),
+        |val: Input| {
+            Token::Bool((*val.fragment()).into(), TextRange::from(val))
+        }
+    )(input)
+}
+
 
 
 
@@ -319,12 +354,15 @@ fn scan_string<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IR
 /// This function may error if nom failed to scan a value token.
 pub fn scan<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token, E> {
     branch::alt((
-        scan_section,
         scan_action,
         scan_port,
         scan_protocol,
         scan_identifier,
         scan_aterisk,
+
         scan_string,
+        scan_uint,
+        scan_sint,
+        scan_bool,
     ))(input)
 }

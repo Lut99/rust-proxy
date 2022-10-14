@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 21:50:04
 //  Last edited:
-//    11 Oct 2022, 23:21:10
+//    13 Oct 2022, 10:56:07
 //  Auto updated?
 //    Yes
 // 
@@ -20,7 +20,8 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use console::style;
 
-use crate::spec::TokenList;
+use crate::spec::{Node, TextRange};
+use crate::tokens::Token;
 
 
 /***** HELPER MACROS *****/
@@ -148,9 +149,16 @@ impl PrettyError for ScanError {
 #[derive(Debug)]
 pub enum ParseError {
     /// Failed to read the given reader as source text.
-    NonEmptyTokenList{ remain: TokenList },
+    NonEmptyTokenList{ remain: Vec<Token> },
+
+    /// Failed to parse an unsigned integer
+    UIntParseError{ raw: String, err: std::num::ParseIntError, range: TextRange },
+    /// Failed to parse a signed integer
+    SIntParseError{ raw: String, err: std::num::ParseIntError, range: TextRange },
+    /// Failed to parse a boolean
+    BoolParseError{ raw: String, range: TextRange },
     /// Failed to parse (nom error)
-    ParseError{ err: nom::Err<nom::error::VerboseError<TokenList>> },
+    NomError{ errs: Vec<nom::error::ErrorKind>, ranges: Vec<TextRange> },
 }
 
 impl Display for ParseError {
@@ -158,19 +166,53 @@ impl Display for ParseError {
         use self::ParseError::*;
         match self {
             NonEmptyTokenList{ remain } => write!(f, "Failed to parse all tokens (remaining: {})", remain.iter().map(|t| format!("{}", t)).collect::<Vec<String>>().join(", ")),
-            ParseError{ err }           => write!(f, "Syntax error: {}", err),
+
+            UIntParseError{ raw, err, .. } => write!(f, "Failed to parse '{}' as an unsigned integer: {}", raw, err),
+            SIntParseError{ raw, err, .. } => write!(f, "Failed to parse '{}' as a signed integer: {}", raw, err),
+            BoolParseError{ raw, .. }      => write!(f, "Failed to parse '{}' as a boolean", raw),
+            NomError{ errs, .. }           => write!(f, "Syntax error: {}", errs.iter().map(|e| format!("{:?}", e)).collect::<Vec<String>>().join(", ")),
         }
     }
 }
 
 impl Error for ParseError {}
 
+impl<'a> nom::error::ParseError<&'a [Token]> for ParseError {
+    fn from_error_kind(input: &'a [Token], kind: nom::error::ErrorKind) -> Self {
+        Self::NomError{ errs: vec![ kind ], ranges: vec![ if !input.is_empty() { TextRange::new(input[0].start(), input[input.len() - 1].end()) } else { TextRange::None } ] }
+    }
+
+    fn append(input: &'a [Token], kind: nom::error::ErrorKind, other: Self) -> Self {
+        let ParseError::NomError { mut errs, mut ranges } = other;
+
+        // Update the values
+        errs.push(kind);
+        ranges.push(if !input.is_empty() { TextRange::new(input[0].start(), input[input.len() - 1].end()) } else { TextRange::None });
+
+        // Done, store
+        Self::NomError{ errs, ranges }
+    }
+}
+impl<'a> nom::error::FromExternalError<&'a [Token], nom::Err<Self>> for ParseError {
+    fn from_external_error(input: &'a [Token], kind: nom::error::ErrorKind, e: nom::Err<Self>) -> Self {
+        match e {
+            nom::Err::Error(e)      => e,
+            nom::Err::Failure(e)    => e,
+            nom::Err::Incomplete(e) => { panic!("Getting `nom::Err::Incomplete` in a nested ParseError should never happen!") },
+        }
+    }
+}
+
 impl PrettyError for ParseError {
     fn prettyprint_plain(&self, f: &mut Formatter<'_>) -> FResult {
         use self::ParseError::*;
         match self {
             NonEmptyTokenList{ .. } => error!(f, "{}", self),
-            ParseError{ .. }        => error!(f, "{}", self),
+
+            UIntParseError{ range, .. } => error!(f, "{}", self),
+            SIntParseError{ range, .. } => error!(f, "{}", self),
+            BoolParseError{ range, .. } => error!(f, "{}", self),
+            NomError{ ranges, .. }      => error!(f, "{}", self),
         }
     }
 }

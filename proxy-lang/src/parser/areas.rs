@@ -4,7 +4,7 @@
 //  Created:
 //    11 Oct 2022, 23:32:03
 //  Last edited:
-//    11 Oct 2022, 23:35:14
+//    14 Oct 2022, 11:01:06
 //  Auto updated?
 //    Yes
 // 
@@ -14,11 +14,15 @@
 
 
 use nom::IResult;
-use nom::{bytes::complete as bc, sequence as seq};
+use nom::{combinator as comb, multi, sequence as seq};
 
-use crate::spec::TokenList;
+pub use crate::errors::ParseError as Error;
+use crate::spec::{Node, TextRange};
 use crate::tokens::Token;
-use crate::ast::SettingsArea;
+use crate::ast::{Rule, RulesArea, Setting, SettingsArea};
+use crate::parser::tag;
+use crate::parser::settings;
+use crate::parser::rule;
 
 
 /***** LIBRARY *****/
@@ -28,12 +32,48 @@ use crate::ast::SettingsArea;
 /// - `input`: The list of tokens.
 /// 
 /// # Returns
-/// A Pattern if we were able to parse one.
+/// A SettingsArea if we were able to parse one.
 /// 
 /// # Errors
 /// This function returns an error if we failed to parse the area.
-pub fn parse<E: nom::error::ParseError<TokenList>>(input: TokenList) -> IResult<TokenList, SettingsArea, E> {
-    seq::tuple((
-        
-    ))(input)
+pub fn parse_settings<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingsArea, Error> {
+    comb::map(
+        seq::tuple((
+            tag!(Token::SettingsSection),
+            multi::many0(settings::parse),
+        )),
+        |(header, settings): (&'a [Token], Vec<Setting>)| {
+            let range: TextRange = TextRange::new(header[0].start(), if !settings.is_empty() { settings[settings.len() - 1].end() } else { header[0].end() });
+            SettingsArea {
+                settings,
+                range,
+            }
+        },
+    )(input)
+}
+
+/// Parses a rule area off the list of tokens.
+/// 
+/// # Arguments
+/// - `input`: The list of tokens.
+/// 
+/// # Returns
+/// A RulesArea if we were able to parse one.
+/// 
+/// # Errors
+/// This function returns an error if we failed to parse the area.
+pub fn parse_rules<'a>(input: &'a [Token]) -> IResult<&'a [Token], RulesArea, Error> {
+    comb::map(
+        seq::tuple((
+            tag!(Token::RulesSection),
+            multi::many0(rule::parse),
+        )),
+        |(header, rules): (&'a [Token], Vec<Rule>)| {
+            let range: TextRange = TextRange::new(header[0].start(), if !rules.is_empty() { rules[rules.len() - 1].end() } else { header[0].end() });
+            RulesArea {
+                rules,
+                range,
+            }
+        }
+    )(input)
 }

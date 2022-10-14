@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:31:32
 //  Last edited:
-//    11 Oct 2022, 17:36:16
+//    12 Oct 2022, 15:15:09
 //  Auto updated?
 //    Yes
 // 
@@ -17,6 +17,7 @@
 pub mod whitespace;
 pub mod comments;
 pub mod punctuation;
+pub mod keywords;
 pub mod values;
 pub mod scanner;
 

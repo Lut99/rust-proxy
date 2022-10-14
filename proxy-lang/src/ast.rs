@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 21:50:45
 //  Last edited:
-//    08 Oct 2022, 20:30:58
+//    13 Oct 2022, 10:41:37
 //  Auto updated?
 //    Yes
 // 
@@ -40,10 +40,8 @@ impl Node for Config {
 /// Defines a single Settings area.
 #[derive(Clone, Debug)]
 pub struct SettingsArea {
-    /// The ports the proxy listens on (if given in this area).
-    pub ports : Option<Vec<PortSetting>>,
-    /// Whether the proxy uses TLS or not.
-    pub tls   : Option<(TextRange, bool)>,
+    /// The settings in the settings area.
+    pub settings : Vec<Setting>,
 
     /// The range of this area.
     pub range : TextRange,
@@ -53,48 +51,66 @@ impl Node for SettingsArea {
     fn range(&self) -> TextRange { self.range }
 }
 
-
-
-/// Defines the setting for the ports to listen on.
+/// Defines a single setting within the settings area.
 #[derive(Clone, Debug)]
-pub struct PortSetting {
-    /// The list of ports to listen on.
-    pub ports : Vec<PortSettingPort>,
+pub struct Setting {
+    /// The key of the settings
+    pub key   : SettingKey,
+    /// The value of the settings
+    pub value : SettingValue,
 
-    /// The range for this entire port setting.
+    /// The text range of the setting
     pub range : TextRange,
 }
-impl Node for PortSetting {
+impl Node for Setting {
     #[inline]
     fn range(&self) -> TextRange { self.range }
 }
 
-/// Defines a single port definition in the PortSetting.
-#[derive(Clone, Copy, Debug)]
-pub struct PortSettingPort {
-    /// The port to listen on.
-    pub port  : usize,
-    /// The range of this setting in the source config.
+/// Defines a key in the setting area.
+#[derive(Clone, Debug)]
+pub struct SettingKey {
+    /// The name of the key.
+    pub value : String,
+    /// The location of the key in the source text.
     pub range : TextRange,
 }
-impl Node for PortSettingPort {
+impl Node for SettingKey {
     #[inline]
-    fn range(&self) -> TextRange { self.range }
+    fn range(&self) -> TextRange{ self.range }
 }
 
+/// Defines a value in the setting area.
+#[derive(Clone, Debug)]
+pub enum SettingValue {
+    /// It's a simple string value.
+    String(String, TextRange),
+    /// It's a simple non-negative numerical value.
+    UInt(u64, TextRange),
+    /// It's a simple numerical value,
+    SInt(i64, TextRange),
+    /// It's a boolean value.
+    Bool(bool, TextRange),
 
-
-/// Defines the setting for the TLS.
-#[derive(Clone, Copy, Debug)]
-pub struct TlsSetting {
-    /// The range for this entire setting.
-    pub range : TextRange,
+    /// It's a list of setting values.
+    List(Vec<Self>, TextRange),
+    /// It's a struct of setting values.
+    Dict(Vec<Setting>, TextRange),
 }
-impl Node for TlsSetting {
-    #[inline]
-    fn range(&self) -> TextRange { self.range }
-}
+impl Node for SettingValue {
+    fn range(&self) -> TextRange {
+        use SettingValue::*;
+        match self {
+            String(_, range) => *range,
+            UInt(_, range)   => *range,
+            SInt(_, range)   => *range,
+            Bool(_, range)   => *range,
 
+            List(_, range) => *range,
+            Dict(_, range) => *range,
+        }
+    }
+}
 
 
 

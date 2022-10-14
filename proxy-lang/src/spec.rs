@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 22:12:02
 //  Last edited:
-//    11 Oct 2022, 23:31:21
+//    12 Oct 2022, 15:36:41
 //  Auto updated?
 //    Yes
 // 
@@ -40,9 +40,9 @@ impl TokenList {
     /// # Returns
     /// A new TokenList instance.
     #[inline]
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: impl Into<Vec<Token>>) -> Self {
         Self {
-            tokens,
+            tokens : tokens.into(),
         }
     }
 
@@ -67,9 +67,40 @@ impl TokenList {
     pub fn iter_mut(&mut self) -> std::slice::IterMut<Token> { self.into_iter() }
 }
 
+impl nom::Compare<TokenList> for TokenList {
+    fn compare(&self, t: TokenList) -> nom::CompareResult {
+        // Find the position of the first place where the two lists are not the same
+        match self.tokens.iter().zip(t.tokens.iter()).position(|(a, b)| a != b) {
+            Some(_) => {
+                // They differ
+                nom::CompareResult::Error
+            },
+            None => {
+                // They are either incomplete (the other has more data than we do) or they are 'equal' (enough)
+                if self.tokens.len() >= t.tokens.len() { nom::CompareResult::Ok }
+                else { nom::CompareResult::Incomplete }
+            },
+        }
+        
+    }
+    #[inline]
+    fn compare_no_case(&self, t: TokenList) -> nom::CompareResult {
+        self.compare(t)
+    }
+}
 impl nom::InputLength for TokenList {
     fn input_len(&self) -> usize {
         self.tokens.len()
+    }
+}
+impl nom::InputTake for TokenList {
+    fn take(&self, count: usize) -> Self {
+        if count > self.tokens.len() { panic!("Cannot take {} elements of TokenList of size {}", count, self.tokens.len()); }
+        TokenList::new(&self.tokens[..count])
+    }
+    fn take_split(&self, count: usize) -> (Self, Self) {
+        if count > self.tokens.len() { panic!("Cannot take_split {} elements of TokenList of size {}", count, self.tokens.len()); }
+        (TokenList::new(&self.tokens[..count]), TokenList::new(&self.tokens[count..]))
     }
 }
 

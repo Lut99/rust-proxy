@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:45:32
 //  Last edited:
-//    11 Oct 2022, 18:22:32
+//    12 Oct 2022, 15:20:49
 //  Auto updated?
 //    Yes
 // 
@@ -23,6 +23,7 @@ use crate::tokens::Token;
 use crate::scanner::whitespace;
 use crate::scanner::comments;
 use crate::scanner::punctuation;
+use crate::scanner::keywords;
 use crate::scanner::values;
 
 
@@ -87,6 +88,10 @@ fn scan_token<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IRe
         comb::map(
             punctuation::scan,
             |p| Some(p),
+        ),
+        comb::map(
+            keywords::scan,
+            |k| Some(k),
         ),
         comb::map(
             values::scan,
