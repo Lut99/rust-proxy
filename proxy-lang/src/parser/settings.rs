@@ -4,7 +4,7 @@
 //  Created:
 //    13 Oct 2022, 09:39:20
 //  Last edited:
-//    14 Oct 2022, 10:47:36
+//    16 Oct 2022, 14:53:04
 //  Auto updated?
 //    Yes
 // 
@@ -20,7 +20,7 @@ use nom::{branch, combinator as comb, multi, sequence as seq};
 
 pub use crate::errors::ParseError as Error;
 use crate::spec::{Node, TextRange};
-use crate::tokens::Token;
+use crate::tokens::{Token, TokenList};
 use crate::ast::{Setting, SettingKey, SettingValue};
 use crate::parser::tag;
 
@@ -36,10 +36,10 @@ use crate::parser::tag;
 /// 
 /// # Errors
 /// This function errors if it failed to parse a SettingValue.
-pub fn parse_string<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, Error> {
+pub fn parse_string<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, SettingValue, Error> {
     comb::map(
         tag!(Token::String, String::new()),
-        |s: &'a [Token]| {
+        |s: TokenList| {
             if let Token::String(value, range) = s[0] {
                 SettingValue::String(value, range)
             } else {
@@ -59,10 +59,10 @@ pub fn parse_string<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue
 /// 
 /// # Errors
 /// This function errors if it failed to parse a SettingValue.
-pub fn parse_uint<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, Error> {
+pub fn parse_uint<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, SettingValue, Error> {
     comb::map_res(
         tag!(Token::UInt, String::new()),
-        |i: &'a [Token]| {
+        |i: TokenList<'a>| {
             if let Token::UInt(value, range) = i[0] {
                 // Attempt to parse
                 let value: u64 = match u64::from_str(&value) {
@@ -89,10 +89,10 @@ pub fn parse_uint<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, 
 /// 
 /// # Errors
 /// This function errors if it failed to parse a SettingValue.
-pub fn parse_sint<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, Error> {
+pub fn parse_sint<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, SettingValue, Error> {
     comb::map_res(
         tag!(Token::SInt, String::new()),
-        |i: &'a [Token]| {
+        |i: TokenList<'a>| {
             if let Token::SInt(value, range) = i[0] {
                 // Attempt to parse
                 let value: i64 = match i64::from_str(&value) {
@@ -119,10 +119,10 @@ pub fn parse_sint<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, 
 /// 
 /// # Errors
 /// This function errors if it failed to parse a SettingValue.
-pub fn parse_bool<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, Error> {
+pub fn parse_bool<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, SettingValue, Error> {
     comb::map_res(
         tag!(Token::Bool, String::new()),
-        |i: &'a [Token]| {
+        |i: TokenList<'a>| {
             if let Token::SInt(value, range) = i[0] {
                 // Attempt to parse
                 let value: bool = match value.as_str() {
@@ -152,7 +152,7 @@ pub fn parse_bool<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, 
 /// 
 /// # Errors
 /// This function errors if it failed to parse a SettingValue.
-pub fn parse_list<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, Error> {
+pub fn parse_list<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, SettingValue, Error> {
     comb::map(
         seq::tuple((
             tag!(Token::LSquare),
@@ -164,7 +164,7 @@ pub fn parse_list<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, 
             ))),
             tag!(Token::RSquare),
         )),
-        |(l, values, r): (&'a [Token], Vec<SettingValue>, &'a [Token])| {
+        |(l, values, r): (TokenList<'a>, Vec<SettingValue>, TokenList<'a>)| {
             SettingValue::List(values, TextRange::new(l[0].start(), r[0].end()))
         }
     )(input)
@@ -180,14 +180,14 @@ pub fn parse_list<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, 
 /// 
 /// # Errors
 /// This function errors if it failed to parse a SettingValue.
-pub fn parse_dict<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, Error> {
+pub fn parse_dict<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, SettingValue, Error> {
     comb::map(
         seq::tuple((
             tag!(Token::LCurly),
             multi::many0(parse),
             tag!(Token::RCurly),
         )),
-        |(l, settings, r): (&'a [Token], Vec<Setting>, &'a [Token])| {
+        |(l, settings, r): (TokenList<'a>, Vec<Setting>, TokenList<'a>)| {
             SettingValue::Dict(settings, TextRange::new(l[0].start(), r[0].end()))
         }
     )(input)
@@ -208,7 +208,7 @@ pub fn parse_dict<'a>(input: &'a [Token]) -> IResult<&'a [Token], SettingValue, 
 /// 
 /// # Errors
 /// This function errors if we could find one on top of the stack.
-pub fn parse<'a>(input: &'a [Token]) -> IResult<&'a [Token], Setting, Error> {
+pub fn parse<'a>(input: TokenList<'a>) -> IResult<TokenList<'a>, Setting, Error> {
     comb::map(
         seq::tuple((
             tag!(Token::Identifier, String::new()),
@@ -224,7 +224,7 @@ pub fn parse<'a>(input: &'a [Token]) -> IResult<&'a [Token], Setting, Error> {
             )),
             tag!(Token::Comma),
         )),
-        |(key, colon, value, comma): (&'a [Token], &'a [Token], SettingValue, &'a [Token])| {
+        |(key, colon, value, comma): (TokenList<'a>, TokenList<'a>, SettingValue, TokenList<'a>)| {
             Setting {
                 key   : if let Token::Identifier(key, range) = key[0] { SettingKey{ value: key, range } } else { panic!("Got a non-Identifier even when that should be the only possibility") },
                 value,

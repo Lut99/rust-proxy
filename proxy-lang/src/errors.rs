@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 21:50:04
 //  Last edited:
-//    13 Oct 2022, 10:56:07
+//    16 Oct 2022, 15:37:53
 //  Auto updated?
 //    Yes
 // 
@@ -20,8 +20,8 @@ use std::fmt::{Display, Formatter, Result as FResult};
 
 use console::style;
 
-use crate::spec::{Node, TextRange};
-use crate::tokens::Token;
+use crate::spec::{Node, TextPos, TextRange};
+use crate::tokens::{Token, TokenList};
 
 
 /***** HELPER MACROS *****/
@@ -150,6 +150,10 @@ impl PrettyError for ScanError {
 pub enum ParseError {
     /// Failed to read the given reader as source text.
     NonEmptyTokenList{ remain: Vec<Token> },
+    /// Failed to get the a token (got EOF instead).
+    EofError{ expected: Token },
+    /// Failed to get a token (got another one instead).
+    UnexpectedTokenError{ got: Token, expected: Token },
 
     /// Failed to parse an unsigned integer
     UIntParseError{ raw: String, err: std::num::ParseIntError, range: TextRange },
@@ -165,7 +169,9 @@ impl Display for ParseError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use self::ParseError::*;
         match self {
-            NonEmptyTokenList{ remain } => write!(f, "Failed to parse all tokens (remaining: {})", remain.iter().map(|t| format!("{}", t)).collect::<Vec<String>>().join(", ")),
+            NonEmptyTokenList{ remain }           => write!(f, "Failed to parse all tokens (remaining: {})", remain.iter().map(|t| format!("{}", t)).collect::<Vec<String>>().join(", ")),
+            EofError{ expected }                  => write!(f, "Syntax error: expected {}, got EOF", expected),
+            UnexpectedTokenError{ got, expected } => write!(f, "Syntax error: expected {}, got {}", got, expected),
 
             UIntParseError{ raw, err, .. } => write!(f, "Failed to parse '{}' as an unsigned integer: {}", raw, err),
             SIntParseError{ raw, err, .. } => write!(f, "Failed to parse '{}' as a signed integer: {}", raw, err),
@@ -177,12 +183,12 @@ impl Display for ParseError {
 
 impl Error for ParseError {}
 
-impl<'a> nom::error::ParseError<&'a [Token]> for ParseError {
-    fn from_error_kind(input: &'a [Token], kind: nom::error::ErrorKind) -> Self {
+impl<'a> nom::error::ParseError<TokenList<'a>> for ParseError {
+    fn from_error_kind(input: TokenList<'a>, kind: nom::error::ErrorKind) -> Self {
         Self::NomError{ errs: vec![ kind ], ranges: vec![ if !input.is_empty() { TextRange::new(input[0].start(), input[input.len() - 1].end()) } else { TextRange::None } ] }
     }
 
-    fn append(input: &'a [Token], kind: nom::error::ErrorKind, other: Self) -> Self {
+    fn append(input: TokenList<'a>, kind: nom::error::ErrorKind, other: Self) -> Self {
         let ParseError::NomError { mut errs, mut ranges } = other;
 
         // Update the values
@@ -193,8 +199,8 @@ impl<'a> nom::error::ParseError<&'a [Token]> for ParseError {
         Self::NomError{ errs, ranges }
     }
 }
-impl<'a> nom::error::FromExternalError<&'a [Token], nom::Err<Self>> for ParseError {
-    fn from_external_error(input: &'a [Token], kind: nom::error::ErrorKind, e: nom::Err<Self>) -> Self {
+impl<'a> nom::error::FromExternalError<TokenList<'a>, nom::Err<Self>> for ParseError {
+    fn from_external_error(input: TokenList<'a>, kind: nom::error::ErrorKind, e: nom::Err<Self>) -> Self {
         match e {
             nom::Err::Error(e)      => e,
             nom::Err::Failure(e)    => e,
@@ -209,10 +215,33 @@ impl PrettyError for ParseError {
         match self {
             NonEmptyTokenList{ .. } => error!(f, "{}", self),
 
-            UIntParseError{ range, .. } => error!(f, "{}", self),
-            SIntParseError{ range, .. } => error!(f, "{}", self),
-            BoolParseError{ range, .. } => error!(f, "{}", self),
-            NomError{ ranges, .. }      => error!(f, "{}", self),
+            NomError{ ranges, .. } => error!(f, "{}", self),
+
+            // Ignore the rest (for other functions)
+            _ => Ok(()),
         }
+    }
+
+    fn prettyprint_source(&self, f: &mut Formatter<'_>) -> FResult {
+        use self::ParseError::*;
+
+        // Fetch the range
+        let range: TextRange = match self {
+            EofError{ expected }            => expected.range(),
+            UnexpectedTokenError{ got, .. } => got.range(),
+
+            UIntParseError{ range, .. } |
+            SIntParseError{ range, .. } |
+            BoolParseError{ range, .. } => *range,
+
+            // Nothing to fetch; nothing to do
+            _ => { return Ok(()); },
+        };
+
+        // Print the header thingy
+        write!(f, "{}: {}: {}", style(if let TextRange::Some(start, _) = range { if let TextPos::Some(line, col) = start { format!("{}:{}:{}", "???", line, col) } else { String::from("<none>") } } else { String::from("<none>") }).bold(), style("error").bold().red(), self)?;
+
+        // Search the source file
+        
     }
 }

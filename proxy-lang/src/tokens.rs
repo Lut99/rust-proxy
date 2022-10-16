@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:33:31
 //  Last edited:
-//    14 Oct 2022, 11:55:18
+//    16 Oct 2022, 17:08:05
 //  Auto updated?
 //    Yes
 // 
@@ -14,8 +14,9 @@
 
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::mem;
+use std::ops::{Index, IndexMut};
 
-use crate::spec::{Node, TextRange};
+use crate::spec::{Node, SourceRef};
 
 
 /***** AUXILLARY *****/
@@ -23,7 +24,7 @@ use crate::spec::{Node, TextRange};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TokenList<'a> {
     /// The tokens themselves
-    tokens : &'a [Token],
+    tokens : &'a [Token<'a>],
 }
 
 impl<'a> TokenList<'a> {
@@ -35,7 +36,7 @@ impl<'a> TokenList<'a> {
     /// # Returns
     /// A new TokenList instance.
     #[inline]
-    pub fn new(tokens: impl 'a + AsRef<[Token]>) -> Self {
+    pub fn new(tokens: impl 'a + AsRef<[Token<'a>]>) -> Self {
         Self {
             tokens : tokens.as_ref(),
         }
@@ -79,49 +80,66 @@ impl<'a> nom::InputLength for TokenList<'a> {
     }
 }
 impl<'a> nom::InputIter for TokenList<'a> {
-    type Item     = &'a Token;
-    type Iter     = std::iter::Enumerate<std::slice::Iter<'a, Token>>;
-    type IterElem = std::slice::Iter<'a, Token>;
+    type Item     = &'a Token<'a>;
+    type Iter     = std::iter::Enumerate<std::slice::Iter<'a, Token<'a>>>;
+    type IterElem = std::slice::Iter<'a, Token<'a>>;
 
     fn iter_elements(&self) -> Self::IterElem {
-        
+        self.tokens.iter()
     }
 
     fn iter_indices(&self) -> Self::Iter {
-        
+        self.tokens.iter().enumerate()
     }
 
     fn position<P>(&self, predicate: P) -> Option<usize>
     where
         P: Fn(Self::Item) -> bool
     {
-        
+        for (i, t) in self.iter_indices() {
+            if predicate(t) { return Some(i); }
+        }
+        None
     }
 
     fn slice_index(&self, count: usize) -> Result<usize, nom::Needed> {
-        
+        if count > self.tokens.len() { return Err(nom::Needed::new(count - self.tokens.len())); }
+        Ok(count)
+    }
+}
+
+impl<'a> Index<usize> for TokenList<'a> {
+    type Output = Token<'a>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.tokens[index]
+    }
+}
+impl<'a> IndexMut<usize> for TokenList<'a> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.tokens[index]
     }
 }
 
 impl<'a> IntoIterator for TokenList<'a> {
-    type Item     = &'a Token;
-    type IntoIter = std::slice::Iter<'a, Token>;
+    type Item     = &'a Token<'a>;
+    type IntoIter = std::slice::Iter<'a, Token<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tokens.iter()
     }
 }
 impl<'a, 'b> IntoIterator for &'b TokenList<'a> {
-    type Item     = &'a Token;
-    type IntoIter = std::slice::Iter<'a, Token>;
+    type Item     = &'a Token<'a>;
+    type IntoIter = std::slice::Iter<'a, Token<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tokens.iter()
     }
 }
 impl<'a, 'b> IntoIterator for &'b mut TokenList<'a> {
-    type Item     = &'a mut Token;
-    type IntoIter = std::slice::IterMut<'a, Token>;
+    type Item     = &'a mut Token<'a>;
+    type IntoIter = std::slice::IterMut<'a, Token<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tokens.iter_mut()
@@ -135,53 +153,53 @@ impl<'a, 'b> IntoIterator for &'b mut TokenList<'a> {
 /***** LIBRARY *****/
 /// Defines the possible tokens produced by the scanner.
 #[derive(Clone, Debug, Eq)]
-pub enum Token {
+pub enum Token<'a> {
     /// Some action
-    Action(String, TextRange),
+    Action(String, Option<SourceRef<'a>>),
     /// Any protocol (e.g., `http://`)
-    Protocol(String, TextRange),
+    Protocol(String, Option<SourceRef<'a>>),
     /// Any identifier / word / path element / w/e
-    Identifier(String, TextRange),
+    Identifier(String, Option<SourceRef<'a>>),
     /// A port number (unparsed as of yet)
-    Port(String, TextRange),
+    Port(String, Option<SourceRef<'a>>),
     /// An aterisk, possibly named.
-    Aterisk(Option<String>, TextRange),
+    Aterisk(Option<String>, Option<SourceRef<'a>>),
 
     /// A string literal
-    String(String, TextRange),
+    String(String, Option<SourceRef<'a>>),
     /// An unsigned integer
-    UInt(String, TextRange),
+    UInt(String, Option<SourceRef<'a>>),
     /// A signed integer.
-    SInt(String, TextRange),
+    SInt(String, Option<SourceRef<'a>>),
     /// A boolean value.
-    Bool(String, TextRange),
+    Bool(String, Option<SourceRef<'a>>),
 
     /// The `[settings]` keyword/section
-    SettingsSection(TextRange),
+    SettingsSection(Option<SourceRef<'a>>),
     /// The `[rules]` keyword/section
-    RulesSection(TextRange),
+    RulesSection(Option<SourceRef<'a>>),
 
     /// The arrow `->` symbol
-    Arrow(TextRange),
+    Arrow(Option<SourceRef<'a>>),
     /// The left square bracket
-    LSquare(TextRange),
+    LSquare(Option<SourceRef<'a>>),
     /// The right square bracket
-    RSquare(TextRange),
+    RSquare(Option<SourceRef<'a>>),
     /// The left curly bracket
-    LCurly(TextRange),
+    LCurly(Option<SourceRef<'a>>),
     /// The right curly bracket
-    RCurly(TextRange),
+    RCurly(Option<SourceRef<'a>>),
     /// The colon `:` symbol
-    Colon(TextRange),
+    Colon(Option<SourceRef<'a>>),
     /// The slash `/` symbol
-    Slash(TextRange),
+    Slash(Option<SourceRef<'a>>),
     /// The dot `.` symbol
-    Dot(TextRange),
+    Dot(Option<SourceRef<'a>>),
     /// The comma `,` symbol
-    Comma(TextRange),
+    Comma(Option<SourceRef<'a>>),
 }
 
-impl Display for Token {
+impl<'a> Display for Token<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use Token::*;
         match self {
@@ -212,38 +230,67 @@ impl Display for Token {
     }
 }
 
-impl Node for Token {
-    fn range(&self) -> TextRange {
+impl<'a> Node for Token<'a> {
+    // fn range(&self) -> TextRange {
+    //     use Token::*;
+    //     match self {
+    //         Action(_, range)     => *range,
+    //         Protocol(_, range)   => *range,
+    //         Identifier(_, range) => *range,
+    //         Port(_, range)       => *range,
+    //         Aterisk(_, range)    => *range,
+
+    //         String(_, range) => *range,
+    //         UInt(_, range)   => *range,
+    //         SInt(_, range)   => *range,
+    //         Bool(_, range)   => *range,
+
+    //         SettingsSection(range) => *range,
+    //         RulesSection(range)    => *range,
+
+    //         Arrow(range)   => *range,
+    //         LSquare(range) => *range,
+    //         RSquare(range) => *range,
+    //         LCurly(range)  => *range,
+    //         RCurly(range)  => *range,
+    //         Colon(range)   => *range,
+    //         Slash(range)   => *range,
+    //         Dot(range)     => *range,
+    //         Comma(range)   => *range,
+    //     }
+    // }
+
+    fn get_source_ref(&'a self) -> Option<SourceRef<'a>> {
         use Token::*;
         match self {
-            Action(_, range)     => *range,
-            Protocol(_, range)   => *range,
-            Identifier(_, range) => *range,
-            Port(_, range)       => *range,
-            Aterisk(_, range)    => *range,
+            Action(_, sref)     => sref,
+            Protocol(_, sref)   => sref,
+            Identifier(_, sref) => sref,
+            Port(_, sref)       => sref,
+            Aterisk(_, sref)    => sref,
 
-            String(_, range) => *range,
-            UInt(_, range)   => *range,
-            SInt(_, range)   => *range,
-            Bool(_, range)   => *range,
+            String(_, sref) => sref,
+            UInt(_, sref)   => sref,
+            SInt(_, sref)   => sref,
+            Bool(_, sref)   => sref,
 
-            SettingsSection(range) => *range,
-            RulesSection(range)    => *range,
+            SettingsSection(sref) => sref,
+            RulesSection(sref)    => sref,
 
-            Arrow(range)   => *range,
-            LSquare(range) => *range,
-            RSquare(range) => *range,
-            LCurly(range)  => *range,
-            RCurly(range)  => *range,
-            Colon(range)   => *range,
-            Slash(range)   => *range,
-            Dot(range)     => *range,
-            Comma(range)   => *range,
+            Arrow(sref)   => sref,
+            LSquare(sref) => sref,
+            RSquare(sref) => sref,
+            LCurly(sref)  => sref,
+            RCurly(sref)  => sref,
+            Colon(sref)   => sref,
+            Slash(sref)   => sref,
+            Dot(sref)     => sref,
+            Comma(sref)   => sref,
         }
     }
 }
 
-impl PartialEq for Token {
+impl<'a> PartialEq for Token<'a> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         mem::discriminant(self) == mem::discriminant(other)
