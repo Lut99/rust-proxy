@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:33:31
 //  Last edited:
-//    16 Oct 2022, 17:08:05
+//    22 Oct 2022, 15:41:11
 //  Auto updated?
 //    Yes
 // 
@@ -12,19 +12,20 @@
 //!   Defines the possible tokens produced by the scanner.
 // 
 
-use std::fmt::{Display, Formatter, Result as FResult};
+use std::fmt::{Debug, Display, Formatter, Result as FResult};
 use std::mem;
-use std::ops::{Index, IndexMut};
+use std::ops::Index;
 
-use crate::spec::{Node, SourceRef};
+use crate::spec::Node;
+use crate::source::{SourceRef, SourceText};
 
 
 /***** AUXILLARY *****/
 /// Defines a wrapper around a Token slice to implement all of the functions we need.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TokenList<'a> {
     /// The tokens themselves
-    tokens : &'a [Token<'a>],
+    tokens : &'a [Token<SourceRef<'a>>],
 }
 
 impl<'a> TokenList<'a> {
@@ -36,7 +37,7 @@ impl<'a> TokenList<'a> {
     /// # Returns
     /// A new TokenList instance.
     #[inline]
-    pub fn new(tokens: impl 'a + AsRef<[Token<'a>]>) -> Self {
+    pub fn new(tokens: &'a [Token<SourceRef<'a>>]) -> Self {
         Self {
             tokens : tokens.as_ref(),
         }
@@ -56,11 +57,7 @@ impl<'a> TokenList<'a> {
 
     /// Returns an iterator over the TokenList.
     #[inline]
-    pub fn iter<'b>(&'a self) -> std::slice::Iter<'a, Token> { self.into_iter() }
-
-    /// Returns a muteable iterator over the TokenList.
-    #[inline]
-    pub fn iter_mut<'b>(&'a mut self) -> std::slice::IterMut<'a, Token> { self.into_iter() }
+    pub fn iter<'b>(&'a self) -> std::slice::Iter<'a, Token<SourceRef<'a>>> { self.into_iter() }
 }
 
 impl<'a> nom::InputTake for TokenList<'a> {
@@ -80,9 +77,9 @@ impl<'a> nom::InputLength for TokenList<'a> {
     }
 }
 impl<'a> nom::InputIter for TokenList<'a> {
-    type Item     = &'a Token<'a>;
-    type Iter     = std::iter::Enumerate<std::slice::Iter<'a, Token<'a>>>;
-    type IterElem = std::slice::Iter<'a, Token<'a>>;
+    type Item     = &'a Token<SourceRef<'a>>;
+    type Iter     = std::iter::Enumerate<std::slice::Iter<'a, Token<SourceRef<'a>>>>;
+    type IterElem = std::slice::Iter<'a, Token<SourceRef<'a>>>;
 
     fn iter_elements(&self) -> Self::IterElem {
         self.tokens.iter()
@@ -109,40 +106,27 @@ impl<'a> nom::InputIter for TokenList<'a> {
 }
 
 impl<'a> Index<usize> for TokenList<'a> {
-    type Output = Token<'a>;
+    type Output = Token<SourceRef<'a>>;
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.tokens[index]
     }
 }
-impl<'a> IndexMut<usize> for TokenList<'a> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.tokens[index]
-    }
-}
 
 impl<'a> IntoIterator for TokenList<'a> {
-    type Item     = &'a Token<'a>;
-    type IntoIter = std::slice::Iter<'a, Token<'a>>;
+    type Item     = &'a Token<SourceRef<'a>>;
+    type IntoIter = std::slice::Iter<'a, Token<SourceRef<'a>>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tokens.iter()
     }
 }
 impl<'a, 'b> IntoIterator for &'b TokenList<'a> {
-    type Item     = &'a Token<'a>;
-    type IntoIter = std::slice::Iter<'a, Token<'a>>;
+    type Item     = &'a Token<SourceRef<'a>>;
+    type IntoIter = std::slice::Iter<'a, Token<SourceRef<'a>>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tokens.iter()
-    }
-}
-impl<'a, 'b> IntoIterator for &'b mut TokenList<'a> {
-    type Item     = &'a mut Token<'a>;
-    type IntoIter = std::slice::IterMut<'a, Token<'a>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.tokens.iter_mut()
     }
 }
 
@@ -153,53 +137,53 @@ impl<'a, 'b> IntoIterator for &'b mut TokenList<'a> {
 /***** LIBRARY *****/
 /// Defines the possible tokens produced by the scanner.
 #[derive(Clone, Debug, Eq)]
-pub enum Token<'a> {
+pub enum Token<T> {
     /// Some action
-    Action(String, Option<SourceRef<'a>>),
+    Action(String, Option<T>),
     /// Any protocol (e.g., `http://`)
-    Protocol(String, Option<SourceRef<'a>>),
+    Protocol(String, Option<T>),
     /// Any identifier / word / path element / w/e
-    Identifier(String, Option<SourceRef<'a>>),
+    Identifier(String, Option<T>),
     /// A port number (unparsed as of yet)
-    Port(String, Option<SourceRef<'a>>),
+    Port(String, Option<T>),
     /// An aterisk, possibly named.
-    Aterisk(Option<String>, Option<SourceRef<'a>>),
+    Aterisk(Option<String>, Option<T>),
 
     /// A string literal
-    String(String, Option<SourceRef<'a>>),
+    String(String, Option<T>),
     /// An unsigned integer
-    UInt(String, Option<SourceRef<'a>>),
+    UInt(String, Option<T>),
     /// A signed integer.
-    SInt(String, Option<SourceRef<'a>>),
+    SInt(String, Option<T>),
     /// A boolean value.
-    Bool(String, Option<SourceRef<'a>>),
+    Bool(String, Option<T>),
 
     /// The `[settings]` keyword/section
-    SettingsSection(Option<SourceRef<'a>>),
+    SettingsSection(Option<T>),
     /// The `[rules]` keyword/section
-    RulesSection(Option<SourceRef<'a>>),
+    RulesSection(Option<T>),
 
     /// The arrow `->` symbol
-    Arrow(Option<SourceRef<'a>>),
+    Arrow(Option<T>),
     /// The left square bracket
-    LSquare(Option<SourceRef<'a>>),
+    LSquare(Option<T>),
     /// The right square bracket
-    RSquare(Option<SourceRef<'a>>),
+    RSquare(Option<T>),
     /// The left curly bracket
-    LCurly(Option<SourceRef<'a>>),
+    LCurly(Option<T>),
     /// The right curly bracket
-    RCurly(Option<SourceRef<'a>>),
+    RCurly(Option<T>),
     /// The colon `:` symbol
-    Colon(Option<SourceRef<'a>>),
+    Colon(Option<T>),
     /// The slash `/` symbol
-    Slash(Option<SourceRef<'a>>),
+    Slash(Option<T>),
     /// The dot `.` symbol
-    Dot(Option<SourceRef<'a>>),
+    Dot(Option<T>),
     /// The comma `,` symbol
-    Comma(Option<SourceRef<'a>>),
+    Comma(Option<T>),
 }
 
-impl<'a> Display for Token<'a> {
+impl<T> Display for Token<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use Token::*;
         match self {
@@ -230,67 +214,41 @@ impl<'a> Display for Token<'a> {
     }
 }
 
-impl<'a> Node for Token<'a> {
-    // fn range(&self) -> TextRange {
-    //     use Token::*;
-    //     match self {
-    //         Action(_, range)     => *range,
-    //         Protocol(_, range)   => *range,
-    //         Identifier(_, range) => *range,
-    //         Port(_, range)       => *range,
-    //         Aterisk(_, range)    => *range,
-
-    //         String(_, range) => *range,
-    //         UInt(_, range)   => *range,
-    //         SInt(_, range)   => *range,
-    //         Bool(_, range)   => *range,
-
-    //         SettingsSection(range) => *range,
-    //         RulesSection(range)    => *range,
-
-    //         Arrow(range)   => *range,
-    //         LSquare(range) => *range,
-    //         RSquare(range) => *range,
-    //         LCurly(range)  => *range,
-    //         RCurly(range)  => *range,
-    //         Colon(range)   => *range,
-    //         Slash(range)   => *range,
-    //         Dot(range)     => *range,
-    //         Comma(range)   => *range,
-    //     }
-    // }
-
-    fn get_source_ref(&'a self) -> Option<SourceRef<'a>> {
+impl<T> Node<T> for Token<T>
+where
+    T: Clone + Debug,
+{
+    fn source<'a>(&'a self) -> &'a Option<T> {
         use Token::*;
         match self {
-            Action(_, sref)     => sref,
-            Protocol(_, sref)   => sref,
-            Identifier(_, sref) => sref,
-            Port(_, sref)       => sref,
-            Aterisk(_, sref)    => sref,
+            Action(_, source)     => source,
+            Protocol(_, source)   => source,
+            Identifier(_, source) => source,
+            Port(_, source)       => source,
+            Aterisk(_, source)    => source,
 
-            String(_, sref) => sref,
-            UInt(_, sref)   => sref,
-            SInt(_, sref)   => sref,
-            Bool(_, sref)   => sref,
+            String(_, source) => source,
+            UInt(_, source)   => source,
+            SInt(_, source)   => source,
+            Bool(_, source)   => source,
 
-            SettingsSection(sref) => sref,
-            RulesSection(sref)    => sref,
+            SettingsSection(source) => source,
+            RulesSection(source)    => source,
 
-            Arrow(sref)   => sref,
-            LSquare(sref) => sref,
-            RSquare(sref) => sref,
-            LCurly(sref)  => sref,
-            RCurly(sref)  => sref,
-            Colon(sref)   => sref,
-            Slash(sref)   => sref,
-            Dot(sref)     => sref,
-            Comma(sref)   => sref,
+            Arrow(source)   => source,
+            LSquare(source) => source,
+            RSquare(source) => source,
+            LCurly(source)  => source,
+            RCurly(source)  => source,
+            Colon(source)   => source,
+            Slash(source)   => source,
+            Dot(source)     => source,
+            Comma(source)   => source,
         }
     }
 }
 
-impl<'a> PartialEq for Token<'a> {
+impl<T> PartialEq for Token<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         mem::discriminant(self) == mem::discriminant(other)
@@ -299,5 +257,36 @@ impl<'a> PartialEq for Token<'a> {
     #[inline]
     fn ne(&self, other: &Self) -> bool {
         !self.eq(other)
+    }
+}
+
+impl<'a> From<Token<SourceRef<'a>>> for Token<SourceText> {
+    fn from(value: Token<SourceRef<'a>>) -> Self {
+        use Token::*;
+        match value {
+            Action(act, source)    => Action(act, source.map(|s| s.into())),
+            Protocol(prot, source) => Protocol(prot, source.map(|s| s.into())),
+            Identifier(id, source) => Identifier(id, source.map(|s| s.into())),
+            Port(port, source)     => Port(port, source.map(|s| s.into())),
+            Aterisk(name, source)  => Aterisk(name, source.map(|s| s.into())),
+
+            String(val, source) => String(val, source.map(|s| s.into())),
+            UInt(val, source)   => UInt(val, source.map(|s| s.into())),
+            SInt(val, source)   => SInt(val, source.map(|s| s.into())),
+            Bool(val, source)   => Bool(val, source.map(|s| s.into())),
+
+            SettingsSection(source) => SettingsSection(source.map(|s| s.into())),
+            RulesSection(source)    => RulesSection(source.map(|s| s.into())),
+
+            Arrow(source)   => Arrow(source.map(|s| s.into())),
+            LSquare(source) => LSquare(source.map(|s| s.into())),
+            RSquare(source) => RSquare(source.map(|s| s.into())),
+            LCurly(source)  => LCurly(source.map(|s| s.into())),
+            RCurly(source)  => RCurly(source.map(|s| s.into())),
+            Colon(source)   => Colon(source.map(|s| s.into())),
+            Slash(source)   => Slash(source.map(|s| s.into())),
+            Dot(source)     => Dot(source.map(|s| s.into())),
+            Comma(source)   => Comma(source.map(|s| s.into())),
+        }
     }
 }

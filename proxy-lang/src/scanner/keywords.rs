@@ -4,7 +4,7 @@
 //  Created:
 //    12 Oct 2022, 15:15:37
 //  Last edited:
-//    14 Oct 2022, 10:58:22
+//    22 Oct 2022, 14:58:51
 //  Auto updated?
 //    Yes
 // 
@@ -15,8 +15,7 @@
 use nom::IResult;
 use nom::{branch, bytes::complete as bc, combinator as comb};
 
-use crate::spec::{Input, TextRange};
-use crate::tokens::Token;
+use crate::scanner::{Input, Token};
 
 
 /***** LIBRARY *****/
@@ -30,18 +29,18 @@ use crate::tokens::Token;
 /// 
 /// # Errors
 /// This function may error if nom failed to scan a keyword token.
-pub fn scan<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token, E> {
+pub fn scan<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Token<'a>, E> {
     branch::alt((
         comb::map(
             bc::tag("[settings]"),
             |sec: Input| {
-                Token::SettingsSection(TextRange::from(sec))
+                Token::SettingsSection(Some(sec))
             },
         ),
         comb::map(
             bc::tag("[rules]"),
             |sec: Input| {
-                Token::RulesSection(TextRange::from(sec))
+                Token::RulesSection(Some(sec))
             },
         ),
     ))(input)

@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 22:57:03
 //  Last edited:
-//    11 Oct 2022, 17:31:37
+//    22 Oct 2022, 15:59:44
 //  Auto updated?
 //    Yes
 // 
@@ -26,30 +26,45 @@ pub const TEST_DIR: &str = "../tests";
 
 
 /***** LIBRARY MACROS *****/
-/// Creates a located span for us.
-macro_rules! input {
-    ($text:literal) => {
-        crate::spec::Input::new($text)
+// /// Creates a located span for us.
+// macro_rules! input {
+//     ($text:literal) => {
+//         crate::source::SourceRef::new("<test>", $text)
+//     };
+
+//     ($text:literal, $offset:expr) => {
+//         unsafe { crate::source::SourceRef::new_with_raw_offset("<test>", $text, $offset, $text.len()) }
+//     };
+//     ($text:literal, $offset:expr, $line:expr) => {
+//         unsafe { crate::source::SourceRef::new_with_raw_offset($offset, $line, $text.len()) }
+//     };
+// }
+// pub(crate) use input;
+
+
+
+// /// Shortcut for creating a new range
+// macro_rules! range {
+//     ($x1:literal : $y1:literal - $x2:literal : $y2:literal) => {
+//         TextRange::new(TextPos::new($x1, $y1), TextPos::new($x2, $y2))
+//     };
+// }
+// pub(crate) use range;
+
+/// Performs an assertion whether the given function parsed the proper token text.
+macro_rules! assert_scan {
+    ($func:path, $input:expr, $i1:literal - $i2:literal) => {
+        match $func(crate::source::SourceRef::new("<test>", $input)) {
+            Ok(res)  => assert_eq!(res, (unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", $input, $i1, $input.len() - (1 + $i2 - $i1)) }, ())),
+            Err(err) => panic!("Function failed with: {}", err),
+        }
     };
 
-    ($text:literal, $offset:expr) => {
-        unsafe { crate::spec::Input::new_from_raw_offset($offset, 1, $text, ()) }
-    };
-    ($text:literal, $offset:expr, $line:expr) => {
-        unsafe { crate::spec::Input::new_from_raw_offset($offset, $line, $text, ()) }
+    ($func:path, $input:expr, Token::$token:ident, $i1:literal - $i2:literal) => {
+        assert_eq!($func(crate::source::SourceRef::new("<test>", $input)).ok(), Some((unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", $input, $i1, $input.len() - (1 + $i2 - $i1)) }, Token::$token(unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", $input[$i1..$i2 + 1], 0, 1 + $i2 - $i1) }))))
     };
 }
-pub(crate) use input;
-
-
-
-/// Shortcut for creating a new range
-macro_rules! range {
-    ($x1:literal : $y1:literal - $x2:literal : $y2:literal) => {
-        TextRange::new(TextPos::new($x1, $y1), TextPos::new($x2, $y2))
-    };
-}
-pub(crate) use range;
+pub(crate) use assert_scan;
 
 
 

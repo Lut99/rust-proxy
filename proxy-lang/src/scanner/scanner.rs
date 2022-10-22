@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:45:32
 //  Last edited:
-//    12 Oct 2022, 15:20:49
+//    22 Oct 2022, 15:57:25
 //  Auto updated?
 //    Yes
 // 
@@ -18,8 +18,8 @@ use nom::IResult;
 use nom::{branch, combinator as comb};
 
 pub use crate::errors::ScanError as Error;
-use crate::spec::Input;
-use crate::tokens::Token;
+use crate::source::{SourceRef, SourceText};
+use crate::scanner::{Input, Token};
 use crate::scanner::whitespace;
 use crate::scanner::comments;
 use crate::scanner::punctuation;
@@ -40,7 +40,7 @@ mod tests {
     fn test_files() {
         run_test_on_files(|path, source| {
             // Run the scanner
-            let tokens: Vec<Token> = match scan(&format!("{}", path.display()), source.as_bytes()) {
+            let tokens: Vec<crate::tokens::Token<SourceText>> = match scan(&format!("{}", path.display()), source.as_bytes()) {
                 Ok(tokens) => tokens,
                 Err(err)   => { panic!("Scanner failed: {}", err); },
             };
@@ -48,8 +48,8 @@ mod tests {
             // Print what is happening
             let mut last_line: usize = 1;
             for t in tokens {
-                if t.start().line().unwrap() != last_line {
-                    last_line = t.start().line().unwrap();
+                if t.source().as_ref().unwrap().start().0 != last_line {
+                    last_line = t.source().as_ref().unwrap().start().0;
                     println!();
                 }
                 print!("{} ", t);
@@ -74,7 +74,7 @@ mod tests {
 /// 
 /// # Errors
 /// A nom error if we failed (either because no parser matched or because there was a genuine error).
-fn scan_token<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Option<Token>, E> {
+fn scan_token<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IResult<Input<'a>, Option<Token<'a>>, E> {
     branch::alt((
         comb::value(
             None,
@@ -116,21 +116,22 @@ fn scan_token<'a, E: nom::error::ParseError<Input<'a>>>(input: Input<'a>) -> IRe
 /// 
 /// # Errors
 /// This function errors if the input was ill-formed.
-pub fn scan(file: impl AsRef<str>, reader: impl Read) -> Result<Vec<Token>, Error> {
+pub fn scan(file: impl AsRef<str>, reader: impl Read) -> Result<Vec<crate::tokens::Token<SourceText>>, Error> {
+    let file: &str = file.as_ref();
     let mut reader = reader;
 
     // Consume the reader to string
     let mut source: String = String::new();
     if let Err(err) = reader.read_to_string(&mut source) {
-        return Err(Error::ReaderReadError{ file: file.as_ref().into(), err });
+        return Err(Error::ReaderReadError{ file: file.into(), err });
     }
 
     // Parse tokens until eof
-    let mut input  : Input      = Input::new(&source);
+    let mut input  : SourceRef  = SourceRef::new(file, &source);
     let mut tokens : Vec<Token> = vec![];
     while !input.is_empty() {
         // Parse it
-        match scan_token::<nom::error::VerboseError<Input>>(input) {
+        match scan_token::<nom::error::VerboseError<SourceRef>>(input) {
             Ok((rest, Some(token))) => {
                 tokens.push(token);
                 input = rest;
@@ -144,5 +145,5 @@ pub fn scan(file: impl AsRef<str>, reader: impl Read) -> Result<Vec<Token>, Erro
     }
 
     // Done, return the list
-    Ok(tokens)
+    Ok(tokens.into_iter().map(|t| t.into()).collect())
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:54:53
 //  Last edited:
-//    11 Oct 2022, 22:45:20
+//    22 Oct 2022, 15:58:31
 //  Auto updated?
 //    Yes
 // 
@@ -15,25 +15,25 @@
 use nom::IResult;
 use nom::{branch, bytes::complete as bc, combinator as comb, multi, sequence as seq};
 
-use crate::spec::Input;
+use crate::scanner::Input;
 
 
 /***** TESTS *****/
 #[cfg(test)]
 mod tests {
-    use crate::tests::input;
+    use crate::tests::assert_scan;
     use super::*;
 
     #[test]
     fn test_comments() {
         // Simply attempt to parse some comment stuff
-        assert_eq!(scan::<nom::error::Error<Input>>(input!("// Hello there!")).ok(), Some((input!("", 15), ())));
-        assert_eq!(scan::<nom::error::Error<Input>>(input!("/* Hello there! */")).ok(), Some((input!("", 18), ())));
+        assert_scan!(scan::<nom::error::Error<Input>>, "// Hello there!", 0 - 14);
+        assert_scan!(scan::<nom::error::Error<Input>>, "/* Hello there! */", 0 - 17);
 
         // Parse a multiple comment
-        let (r, _) = scan::<nom::error::Error<Input>>(input!("// Hello there!\n/* Hello there! */")).unwrap();
+        let (r, _) = scan::<nom::error::Error<Input>>(Input::new("<test>", "// Hello there!\n/* Hello there! */")).unwrap();
         let (r, _) = scan::<nom::error::Error<Input>>(r).unwrap();
-        assert_eq!(r, input!("", 34, 2));
+        assert_eq!(r, unsafe{ Input::new_with_raw_offset("<test>", "", 34, 0) });
     }
 }
 

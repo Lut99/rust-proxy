@@ -4,7 +4,7 @@
 //  Created:
 //    07 Oct 2022, 21:50:04
 //  Last edited:
-//    16 Oct 2022, 15:37:53
+//    22 Oct 2022, 14:49:29
 //  Auto updated?
 //    Yes
 // 
@@ -18,9 +18,10 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FResult};
 
-use console::style;
+use console::{style, Style};
 
-use crate::spec::{Node, TextPos, TextRange};
+use crate::spec::Node;
+use crate::source::SourceText;
 use crate::tokens::{Token, TokenList};
 
 
@@ -75,6 +76,15 @@ pub trait PrettyError: Error {
     /// # Errors
     /// This function errors if we failed to write somehow. Any other errors should probably be panics, at this point (or handled gracefully).
     fn prettyprint_source(&self, _f: &mut Formatter<'_>) -> FResult { Ok(()) }
+
+    /// Prints the error as multiple errors in succession.
+    /// 
+    /// # Arguments
+    /// - `f`: The Formatter to write to.
+    /// 
+    /// # Errors
+    /// This function errors if we failed to write somehow. Any other errors should probably be panics, at this point (or handled gracefully).
+    fn prettyprint_multiple(&self, _f: &mut Formatter<'_>) -> FResult { Ok(()) }
 
 
 
@@ -149,20 +159,20 @@ impl PrettyError for ScanError {
 #[derive(Debug)]
 pub enum ParseError {
     /// Failed to read the given reader as source text.
-    NonEmptyTokenList{ remain: Vec<Token> },
+    NonEmptyTokenList{ remain: Vec<Token<SourceText>> },
     /// Failed to get the a token (got EOF instead).
-    EofError{ expected: Token },
+    EofError{ expected: Token<SourceText> },
     /// Failed to get a token (got another one instead).
-    UnexpectedTokenError{ got: Token, expected: Token },
+    UnexpectedTokenError{ got: Token<SourceText>, expected: Token<SourceText> },
 
     /// Failed to parse an unsigned integer
-    UIntParseError{ raw: String, err: std::num::ParseIntError, range: TextRange },
+    UIntParseError{ raw: String, err: std::num::ParseIntError, source: Option<SourceText> },
     /// Failed to parse a signed integer
-    SIntParseError{ raw: String, err: std::num::ParseIntError, range: TextRange },
+    SIntParseError{ raw: String, err: std::num::ParseIntError, source: Option<SourceText> },
     /// Failed to parse a boolean
-    BoolParseError{ raw: String, range: TextRange },
+    BoolParseError{ raw: String, source: Option<SourceText> },
     /// Failed to parse (nom error)
-    NomError{ errs: Vec<nom::error::ErrorKind>, ranges: Vec<TextRange> },
+    NomError{ errs: Vec<(nom::error::ErrorKind, Option<SourceText>)> },
 }
 
 impl Display for ParseError {
@@ -176,7 +186,7 @@ impl Display for ParseError {
             UIntParseError{ raw, err, .. } => write!(f, "Failed to parse '{}' as an unsigned integer: {}", raw, err),
             SIntParseError{ raw, err, .. } => write!(f, "Failed to parse '{}' as a signed integer: {}", raw, err),
             BoolParseError{ raw, .. }      => write!(f, "Failed to parse '{}' as a boolean", raw),
-            NomError{ errs, .. }           => write!(f, "Syntax error: {}", errs.iter().map(|e| format!("{:?}", e)).collect::<Vec<String>>().join(", ")),
+            NomError{ errs, .. }           => write!(f, "Syntax error: {}", errs.iter().map(|(e, _)| format!("{:?}", e)).collect::<Vec<String>>().join(", ")),
         }
     }
 }
@@ -185,26 +195,27 @@ impl Error for ParseError {}
 
 impl<'a> nom::error::ParseError<TokenList<'a>> for ParseError {
     fn from_error_kind(input: TokenList<'a>, kind: nom::error::ErrorKind) -> Self {
-        Self::NomError{ errs: vec![ kind ], ranges: vec![ if !input.is_empty() { TextRange::new(input[0].start(), input[input.len() - 1].end()) } else { TextRange::None } ] }
+        Self::NomError{ errs: vec![ (kind, if !input.is_empty() { if let (Some(lhs), Some(rhs)) = (input[0].source(), input[input.len() - 1].source()) { Some((lhs + rhs).into()) } else { None } } else { None }) ] }
     }
 
     fn append(input: TokenList<'a>, kind: nom::error::ErrorKind, other: Self) -> Self {
-        let ParseError::NomError { mut errs, mut ranges } = other;
+        if let ParseError::NomError { mut errs } = other {
+            // Update the values
+            errs.push((kind, if !input.is_empty() { if let (Some(lhs), Some(rhs)) = (input[0].source(), input[input.len() - 1].source()) { Some((lhs + rhs).into()) } else { None } } else { None }));
 
-        // Update the values
-        errs.push(kind);
-        ranges.push(if !input.is_empty() { TextRange::new(input[0].start(), input[input.len() - 1].end()) } else { TextRange::None });
-
-        // Done, store
-        Self::NomError{ errs, ranges }
+            // Done, store
+            Self::NomError{ errs }
+        } else {
+            panic!("Cannot append non-NomError to ParseError");
+        }
     }
 }
 impl<'a> nom::error::FromExternalError<TokenList<'a>, nom::Err<Self>> for ParseError {
-    fn from_external_error(input: TokenList<'a>, kind: nom::error::ErrorKind, e: nom::Err<Self>) -> Self {
+    fn from_external_error(_input: TokenList<'a>, _kind: nom::error::ErrorKind, e: nom::Err<Self>) -> Self {
         match e {
             nom::Err::Error(e)      => e,
             nom::Err::Failure(e)    => e,
-            nom::Err::Incomplete(e) => { panic!("Getting `nom::Err::Incomplete` in a nested ParseError should never happen!") },
+            nom::Err::Incomplete(_) => { panic!("Getting `nom::Err::Incomplete` in a nested ParseError should never happen!") },
         }
     }
 }
@@ -213,9 +224,14 @@ impl PrettyError for ParseError {
     fn prettyprint_plain(&self, f: &mut Formatter<'_>) -> FResult {
         use self::ParseError::*;
         match self {
-            NonEmptyTokenList{ .. } => error!(f, "{}", self),
-
-            NomError{ ranges, .. } => error!(f, "{}", self),
+            NonEmptyTokenList{ .. }    |
+            EofError{ .. }             |
+            UnexpectedTokenError{ .. } => {
+                // Print the header with the message, that's all
+                writeln!(f, "{}{}", style("error").bold().red(), style(format!(": {}", self)).bold())?;
+                writeln!(f)?;
+                Ok(())
+            },
 
             // Ignore the rest (for other functions)
             _ => Ok(()),
@@ -224,24 +240,49 @@ impl PrettyError for ParseError {
 
     fn prettyprint_source(&self, f: &mut Formatter<'_>) -> FResult {
         use self::ParseError::*;
+        match self {
+            UIntParseError{ source, .. } |
+            SIntParseError{ source, .. } |
+            BoolParseError{ source, .. } => {
+                // Print the header with the message
+                writeln!(f, "{}{}", style("error").bold().red(), style(format!(": {}", self)).bold())?;
 
-        // Fetch the range
-        let range: TextRange = match self {
-            EofError{ expected }            => expected.range(),
-            UnexpectedTokenError{ got, .. } => got.range(),
+                // Write the source reference, if any
+                if let Some(source) = source {
+                    write!(f, "{}", source.display(Style::new().bold().red()))?;
+                }
+                writeln!(f)?;
 
-            UIntParseError{ range, .. } |
-            SIntParseError{ range, .. } |
-            BoolParseError{ range, .. } => *range,
+                // Done
+                Ok(())
+            },
 
-            // Nothing to fetch; nothing to do
-            _ => { return Ok(()); },
-        };
+            // Ignore the rest (for other functions)
+            _ => Ok(()),
+        }
+    }
 
-        // Print the header thingy
-        write!(f, "{}: {}: {}", style(if let TextRange::Some(start, _) = range { if let TextPos::Some(line, col) = start { format!("{}:{}:{}", "???", line, col) } else { String::from("<none>") } } else { String::from("<none>") }).bold(), style("error").bold().red(), self)?;
+    fn prettyprint_multiple(&self, f: &mut Formatter<'_>) -> FResult {
+        use self::ParseError::*;
+        match self {
+            NomError{ errs, .. } => {
+                for (_, source) in errs {
+                    // Print the header with the message
+                    writeln!(f, "{}{}", style("error").bold().red(), style(format!(": {}", self)).bold())?;
 
-        // Search the source file
-        
+                    // Write the source reference, if any
+                    if let Some(source) = source {
+                        write!(f, "{}", source.display(Style::new().bold().red()))?;
+                    }
+                    writeln!(f)?;
+                }
+
+                // Done
+                Ok(())
+            },
+
+            // Ignore the rest (for other functions)
+            _ => Ok(()),
+        }
     }
 }

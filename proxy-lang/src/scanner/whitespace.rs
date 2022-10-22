@@ -4,7 +4,7 @@
 //  Created:
 //    11 Oct 2022, 17:36:05
 //  Last edited:
-//    11 Oct 2022, 17:39:10
+//    22 Oct 2022, 14:55:16
 //  Auto updated?
 //    Yes
 // 
@@ -15,7 +15,7 @@
 use nom::IResult;
 use nom::{branch, character::complete as bc, combinator as comb};
 
-use crate::spec::Input;
+use crate::scanner::Input;
 
 
 /***** LIBRARY *****/

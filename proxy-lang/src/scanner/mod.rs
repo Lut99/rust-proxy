@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:31:32
 //  Last edited:
-//    12 Oct 2022, 15:15:09
+//    22 Oct 2022, 14:56:04
 //  Auto updated?
 //    Yes
 // 
@@ -23,3 +23,10 @@ pub mod scanner;
 
 // Pull stuff into the global namespace
 pub use scanner::{scan, Error};
+
+
+// Define the shortcut for the scanner input
+pub type Input<'a> = crate::source::SourceRef<'a>;
+
+// Define the shortcut for the global token
+pub type Token<'a> = crate::tokens::Token<crate::source::SourceRef<'a>>;
