@@ -4,7 +4,7 @@
 //  Created:
 //    17 Oct 2022, 19:29:02
 //  Last edited:
-//    22 Oct 2022, 16:30:25
+//    01 Nov 2022, 18:49:29
 //  Auto updated?
 //    Yes
 // 
@@ -16,7 +16,7 @@
 //!   `LocatedSpan` in [nom_locate](https://github.com/Geal/nom).
 // 
 
-use std::fmt::{Display, Formatter, Result as FResult};
+use std::fmt::{Debug, Display, Formatter, Result as FResult};
 use std::ops::{Add, AddAssign, RangeFrom};
 
 use console::{style, Style};
@@ -37,22 +37,13 @@ macro_rules! spaces {
 /***** TESTS *****/
 #[cfg(test)]
 mod tests {
-    use nom::IResult;
-    use nom::InputTakeAtPosition;
+    use crate::tests::assert_scan;
     use super::*;
 
     #[test]
     fn test_source() {
         // Create some random source
-        let source: SourceRef = SourceRef::new("<test>", "Hello there!");
-        let res: IResult<SourceRef, SourceRef, nom::error::Error<SourceRef>> = nom::bytes::complete::tag("a")(source);
-        panic!("{}", match res {
-            Ok((left, taken)) => {
-                println!("{:?}, {:?}", left, taken);
-                format!("{}\n{}", left.display(Style::new().bold().green()), taken.display(Style::new().bold().green()))
-            },
-            Err(err) => format!("{}", err),
-        });
+        assert_scan!(nom::combinator::value((), nom::bytes::complete::tag::<&str, SourceRef, nom::error::VerboseError<SourceRef>>("H")), "Hello there!", 0-0);
     }
 }
 
@@ -142,7 +133,7 @@ where
 
 /***** LIBRARY *****/
 /// Defines a reference for source text such that it can be used to link errors to it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct SourceRef<'a> {
     // Actual text reference (used to produce the source)
     /// Reference to the source text as a whole
@@ -377,83 +368,40 @@ impl<'a> nom::InputLength for SourceRef<'a> {
 }
 impl<'a> nom::InputTake for SourceRef<'a> {
     fn take(&self, count: usize) -> Self {
-        // Return an empty one if count == 0
-        if count == 0 {
-            return SourceRef {
-                source : self.source,
-                offset : self.offset,
-                size   : 0,
+        if count > self.size { panic!("Cannot `take()` {} characters of a SourceRef of size {}", count, self.size); }
+        Self {
+            source : self.source,
+            offset : self.offset,
+            size   : count,
 
-                name : self.name,
-            };
+            name : self.name,
         }
-
-        // Attempt to take that many bytes
-        let mut count  : usize = count;
-        let mut iter = self.source[self.offset..self.offset + self.size].char_indices();
-        while let Some((i, _)) = iter.next() {
-            count -= 1;
-            if count == 0 {
-                return SourceRef {
-                    source : self.source,
-                    offset : self.offset,
-                    size   : i,
-
-                    name : self.name,
-                }
-            }
-        }
-
-        // Panic
-        panic!("Cannot take {} characters from SourceRef of size {}", count, self.size);
     }
     fn take_split(&self, count: usize) -> (Self, Self) {
-        // Return an empty one if count == 0
-        if count == 0 {
-            return (
-                SourceRef {
-                    source : self.source,
-                    offset : self.offset,
-                    size   : 0,
+        if count > self.size { panic!("Cannot `take_split()` {} characters of a SourceRef of size {}", count, self.size); }
 
-                    name : self.name,
-                },
-                *self,
-            );
-        }
+        // Return the source refs as a tuple
+        (
+            Self {
+                source : self.source,
+                offset : self.offset + count,
+                size   : self.size - count,
 
-        // Attempt to take that many bytes
-        let mut count  : usize = count;
-        let mut iter = self.source[self.offset..self.offset + self.size].char_indices();
-        while let Some((i, _)) = iter.next() {
-            count -= 1;
-            if count == 0 {
-                return (
-                    SourceRef {
-                        source : self.source,
-                        offset : self.offset,
-                        size   : i,
+                name : self.name,
+            },
+            Self {
+                source : self.source,
+                offset : self.offset,
+                size   : count,
 
-                        name : self.name,
-                    },
-                    SourceRef {
-                        source : self.source,
-                        offset : self.offset + i,
-                        size   : self.size - i,
-
-                        name : self.name,
-                    },
-                );
-            }
-        }
-
-        // Panic
-        panic!("Cannot take_split {} characters from SourceRef of size {}", count, self.size);
+                name : self.name,
+            },
+        )
     }
 }
 impl<'a> nom::InputIter for SourceRef<'a> {
     type Item     = char;
-    type IterElem = std::iter::Map<std::str::Chars<'a>;
+    type IterElem = std::str::Chars<'a>;
     type Iter     = std::str::CharIndices<'a>;
 
     fn iter_elements(&self) -> Self::IterElem {
@@ -481,7 +429,7 @@ impl<'a> nom::UnspecializedInput for SourceRef<'a> {}
 impl<'a> nom::Compare<&str> for SourceRef<'a> {
     fn compare(&self, t: &str) -> CompareResult {
         if self.size < t.len() { return CompareResult::Incomplete; }
-        if &self.source[self.offset..self.offset + self.size] == t {
+        if &self.source[self.offset..self.offset + t.len()] == t {
             CompareResult::Ok
         } else {
             CompareResult::Error
@@ -489,7 +437,7 @@ impl<'a> nom::Compare<&str> for SourceRef<'a> {
     }
     fn compare_no_case(&self, t: &str) -> CompareResult {
         if self.size < t.len() { return CompareResult::Incomplete; }
-        if self.source[self.offset..self.offset + self.size].to_lowercase() == t.to_lowercase() {
+        if self.source[self.offset..self.offset + t.len()].to_lowercase() == t.to_lowercase() {
             CompareResult::Ok
         } else {
             CompareResult::Error
@@ -498,13 +446,12 @@ impl<'a> nom::Compare<&str> for SourceRef<'a> {
 }
 impl<'a> nom::Slice<RangeFrom<usize>> for SourceRef<'a> {
     fn slice(&self, range: RangeFrom<usize>) -> Self {
-        if range.start >= self.size { panic!("Cannot slice SourceRef of size {} from index {}", self.size, range.start); }
-        let offset : usize = self.offset + range.start;
-        let size   : usize = self.size - range.start;
+        if range.start >= self.size { panic!("Cannot `slice()` {} characters of a SourceRef of size {}", range.start, self.size); }
+        println!("Slicing '{}' -> '{}'", &self.source[self.offset..self.offset + self.size], &self.source[(self.offset + range.start)..(self.offset + range.start) + (self.size - range.start)]);
         Self {
-            source : &self.source[offset..offset + size],
-            offset,
-            size,
+            source : &self.source,
+            offset : self.offset + range.start,
+            size   : self.size - range.start,
 
             name : self.name,
         }
@@ -517,6 +464,12 @@ impl<'a> nom::Offset for SourceRef<'a> {
         } else {
             second.offset - self.offset
         }
+    }
+}
+
+impl<'a> Debug for SourceRef<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        write!(f, "SourceRef<'{}', \"{}\">", self.name, self.source[self.offset..self.offset + self.size].replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
     }
 }
 
