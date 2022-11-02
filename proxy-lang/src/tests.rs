@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 22:57:03
 //  Last edited:
-//    01 Nov 2022, 18:54:08
+//    02 Nov 2022, 16:00:47
 //  Auto updated?
 //    Yes
 // 
@@ -53,20 +53,27 @@ pub const TEST_DIR: &str = "../tests";
 
 /// Performs an assertion whether the given function parsed the proper token text.
 macro_rules! assert_scan {
-    ($func:expr, $input:expr, $i1:literal - $i2:literal) => {
-        match $func(crate::source::SourceRef::new("<test>", $input)) {
-            Ok(res)  => assert_eq!(res, (unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", &$input[$i1 + $i2..], 1 + $i2 - $i1, $input.len() - (1 + $i2 - $i1)) }, ())),
-            Err(err) => panic!("Function failed with: {}", err),
+    ($func:expr, $input:expr, $len:literal) => {
+        {
+            // Some sanity checks
+            if $len > $input.len() { panic!("Snippet length {} is out-of-bounds for input of length {}", $len, $input.len()); }
+
+            // Fetch the source
+            let left_source: &str = &$input[$len..];
+
+            // Do the thing
+            match $func(crate::source::SourceRef::new("<test>", $input)) {
+                Ok(res)  => assert_eq!(res, (unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", left_source, $len, $input.len() - $len) }, ())),
+                Err(err) => panic!("Function failed with: {}", err),
+            }
         }
     };
 
-    ($func:expr, $input:expr, Token::$token:ident, $i1:literal - $i2:literal) => {
-        assert_eq!($func(crate::source::SourceRef::new("<test>", $input)).ok(), Some((unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", &$input[i1 + $i2..], 1 + $i2 - $i1, $input.len() - (1 + $i2 - $i1)) }, crate::tokens::Token::$token(unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", $input[0..$i1 + $i2], 0, 1 + $i2 - $i1) }))))
-    };
+    // ($func:expr, $input:expr, Token::$token:ident, $i1:literal - $i2:literal) => {
+    //     assert_eq!($func(crate::source::SourceRef::new("<test>", $input)).ok(), Some((unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", &$input[$i2 + 1..], $i2 + 1, $input.len() - (1 + $i2 - $i1)) }, crate::tokens::Token::$token(unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", $input[$i1..$i2 + 1], $i1, 1 + $i2 - $i1) }))))
+    // };
 }
 pub(crate) use assert_scan;
-
-
 
 
 

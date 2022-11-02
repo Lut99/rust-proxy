@@ -4,7 +4,7 @@
 //  Created:
 //    17 Oct 2022, 19:29:02
 //  Last edited:
-//    01 Nov 2022, 18:49:29
+//    02 Nov 2022, 15:59:23
 //  Auto updated?
 //    Yes
 // 
@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn test_source() {
         // Create some random source
-        assert_scan!(nom::combinator::value((), nom::bytes::complete::tag::<&str, SourceRef, nom::error::VerboseError<SourceRef>>("H")), "Hello there!", 0-0);
+        assert_scan!(nom::combinator::value((), nom::bytes::complete::tag::<&str, SourceRef, nom::error::VerboseError<SourceRef>>("//")), "// Hello there!", 2);
     }
 }
 

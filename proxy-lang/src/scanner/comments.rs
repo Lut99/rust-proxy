@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 20:54:53
 //  Last edited:
-//    22 Oct 2022, 15:58:31
+//    02 Nov 2022, 16:00:04
 //  Auto updated?
 //    Yes
 // 
@@ -27,8 +27,8 @@ mod tests {
     #[test]
     fn test_comments() {
         // Simply attempt to parse some comment stuff
-        assert_scan!(scan::<nom::error::Error<Input>>, "// Hello there!", 0 - 14);
-        assert_scan!(scan::<nom::error::Error<Input>>, "/* Hello there! */", 0 - 17);
+        assert_scan!(scan::<nom::error::Error<Input>>, "// Hello there!", 15);
+        assert_scan!(scan::<nom::error::Error<Input>>, "/* Hello there! */", 18);
 
         // Parse a multiple comment
         let (r, _) = scan::<nom::error::Error<Input>>(Input::new("<test>", "// Hello there!\n/* Hello there! */")).unwrap();
