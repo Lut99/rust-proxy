@@ -4,7 +4,7 @@
 //  Created:
 //    17 Oct 2022, 19:29:02
 //  Last edited:
-//    02 Nov 2022, 15:59:23
+//    04 Nov 2022, 08:18:42
 //  Auto updated?
 //    Yes
 // 
@@ -469,7 +469,11 @@ impl<'a> nom::Offset for SourceRef<'a> {
 
 impl<'a> Debug for SourceRef<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
-        write!(f, "SourceRef<'{}', \"{}\">", self.name, self.source[self.offset..self.offset + self.size].replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
+        if self.offset < self.source.len() && self.offset + self.size <= self.source.len() {
+            write!(f, "SourceRef<'{}', \"{}\">", self.name, self.source[self.offset..self.offset + self.size].replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
+        } else {
+            write!(f, "SourceRef<'{}', !OUT_OF_BOUNDS ({} > {} || {} >= {})!>", self.name, self.offset, self.source.len(), self.offset + self.size, self.source.len())
+        }
     }
 }
 

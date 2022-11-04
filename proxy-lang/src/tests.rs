@@ -4,7 +4,7 @@
 //  Created:
 //    08 Oct 2022, 22:57:03
 //  Last edited:
-//    02 Nov 2022, 16:00:47
+//    04 Nov 2022, 08:20:49
 //  Auto updated?
 //    Yes
 // 
@@ -58,12 +58,9 @@ macro_rules! assert_scan {
             // Some sanity checks
             if $len > $input.len() { panic!("Snippet length {} is out-of-bounds for input of length {}", $len, $input.len()); }
 
-            // Fetch the source
-            let left_source: &str = &$input[$len..];
-
             // Do the thing
             match $func(crate::source::SourceRef::new("<test>", $input)) {
-                Ok(res)  => assert_eq!(res, (unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", left_source, $len, $input.len() - $len) }, ())),
+                Ok(res)  => assert_eq!(res, (unsafe{ crate::source::SourceRef::new_with_raw_offset("<test>", $input, $len, $input.len() - $len) }, ())),
                 Err(err) => panic!("Function failed with: {}", err),
             }
         }
