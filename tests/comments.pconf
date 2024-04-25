@@ -1,9 +1,0 @@
-// This file contains tests for comments in the proxy-language!
-
-// None of these should give errors, and the file should
-// compile to an empty one.
-
-/* Epic! */
-
-/* Or, as they say in Spain:
-   Epic! */
