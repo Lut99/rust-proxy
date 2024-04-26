@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:31:03
 //  Last edited:
-//    26 Apr 2024, 00:00:58
+//    26 Apr 2024, 17:01:53
 //  Auto updated?
 //    Yes
 //
@@ -200,11 +200,15 @@ pub async fn handle_http(
 
             // Find the target
             for addr in addrs {
-                if target.is_none() {
-                    target = Some(addr);
+                debug!("[{client}] Possible resolution of '{host}': '{addr}'");
+                if let Some(prev) = &mut target {
+                    // Prefer IPv6 over IPv4
+                    if prev.is_ipv6() && addr.is_ipv4() {
+                        *prev = addr;
+                    }
                 } else {
-                    error!("Host '{host}' resolves to multiple hostnames; pretending we don't know the hostname");
-                    break 'resume;
+                    // Just set it
+                    target = Some(addr);
                 }
             }
         }

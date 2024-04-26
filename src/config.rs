@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:25:21
 //  Last edited:
-//    25 Apr 2024, 23:27:46
+//    26 Apr 2024, 17:06:10
 //  Auto updated?
 //    Yes
 //
@@ -37,6 +37,8 @@ pub struct Config {
 
     /// Stores hostname -> other hostname maps.
     pub hostnames: HashMap<String, String>,
+    /// Stores hostname -> certificate to use.
+    pub certs:     HashMap<String, CertsPath>,
 
     /// Stores the path to a file to send back if no mapping is found.
     pub not_found_file: PathBuf,
