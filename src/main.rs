@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 21:57:37
 //  Last edited:
-//    25 Apr 2024, 23:33:56
+//    04 May 2024, 09:13:20
 //  Auto updated?
 //    Yes
 //
@@ -12,13 +12,12 @@
 //!   Entrypoint to the `rust-proxy` binary.
 //
 
-use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
-use error_trace::trace;
+use error_trace::{trace, ErrorTrace as _};
 use humanlog::{DebugMode, HumanLogger};
 use log::{debug, error, info};
 use rust_proxy::config::Config;
@@ -26,6 +25,8 @@ use serializable::Serializable as _;
 use tokio::net::TcpListener;
 use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, Signal, SignalKind};
+#[cfg(feature = "https")]
+use tokio_rustls::rustls::ServerConfig;
 
 
 /***** CONSTANTS *****/
@@ -79,16 +80,23 @@ fn main() {
     let config: &'static Config = Box::leak(Box::new(config));
 
     // Load the not-found file
-    debug!("Loading not-found file '{}'...", config.not_found_file.display());
-    let not_found: Vec<u8> = match fs::read(&config.not_found_file) {
+    let not_found: &'static Vec<u8> = match config.load_not_found_file() {
         Ok(file) => file,
         Err(err) => {
-            error!("{}", trace!(("Failed to read not-found file '{}'", config.not_found_file.display()), err));
+            error!("{}", err.trace());
             std::process::exit(1);
         },
     };
-    // Hack: let's make it static, we won't ever load another one anyway.
-    let not_found: &'static Vec<u8> = Box::leak(Box::new(not_found));
+
+    // Load certificates
+    #[cfg(feature = "https")]
+    let tls_config: &'static ServerConfig = match config.load_certstore() {
+        Ok(config) => config,
+        Err(err) => {
+            error!("{}", err.trace());
+            std::process::exit(1);
+        },
+    };
 
     // Build the tokio runtime
     debug!("Building tokio runtime...");
@@ -146,8 +154,6 @@ fn main() {
         },
     };
 
-
-
     /* GAME LOOP */
     if let Err(err) = rt.block_on(async move {
         // Log that we made it
@@ -195,7 +201,7 @@ fn main() {
                 res = https_listener.accept() => match res {
                     Ok((conn, addr)) => {
                         debug!("Received incoming connection on HTTPS listener from '{addr}'");
-                        tokio::spawn(rust_proxy::handlers::handle_https(config, not_found, addr, conn));
+                        tokio::spawn(rust_proxy::handlers::handle_https(config, not_found, tls_config, addr, conn));
                     },
                     Err(err) => error!("{}", trace!(("Failed to accept incoming HTTPS connection on port {}", config.https_port), err)),
                 },
@@ -219,14 +225,15 @@ fn main() {
         std::process::exit(1);
     }
 
-
-
     /* CLEANUP */
     // Drop the runtime, to be sure nothing is using the config anymore
     debug!("Shutting down runtime ({RUNTIME_EXIT_TIMEOUT_S}s timeout)...");
     rt.shutdown_timeout(Duration::from_millis(RUNTIME_EXIT_TIMEOUT_S * 1000));
 
     // Free the borrowed values before exiting
+    // SAFETY: Getting back ownership is OK, as the functions borrowing it are futures that are guaranteed to no longer exist due to the `shutdown_timeout()`-call.
+    #[cfg(feature = "https")]
+    drop(unsafe { Box::from_raw((tls_config as *const ServerConfig) as *mut ServerConfig) });
     // SAFETY: Getting back ownership is OK, as the functions borrowing it are futures that are guaranteed to no longer exist due to the `shutdown_timeout()`-call.
     drop(unsafe { Box::from_raw((not_found as *const Vec<u8>) as *mut Vec<u8>) });
     // SAFETY: Getting back ownership is OK, as the functions borrowing it are futures that are guaranteed to no longer exist due to the `shutdown_timeout()`-call.
