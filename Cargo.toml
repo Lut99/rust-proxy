@@ -19,7 +19,8 @@ tokio = { version = "1.37", default-features = false, features = ["io-util", "ma
 
 
 [features]
-default = ["https"]
+default = ["certbot", "https"]
 
+certbot = []
 https = []
  

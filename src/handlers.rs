@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:31:03
 //  Last edited:
-//    26 Apr 2024, 17:01:53
+//    04 May 2024, 10:08:30
 //  Auto updated?
 //    Yes
 //
@@ -25,7 +25,11 @@ use crate::config::Config;
 
 /***** CONSTANTS *****/
 /// The length of the HTTP line buffer.
-const BUFFER_LEN: usize = 16384;
+const BUFFER_LEN: usize = 8192;
+
+/// Defines the certbot file prefix.
+#[cfg(feature = "certbot")]
+const CERTBOT_PATH_PREFIX: &[u8] = b"/.well-known/acme-challenge/";
 
 
 
@@ -43,7 +47,7 @@ const BUFFER_LEN: usize = 16384;
 /// This function can fail if we failed to write to the given `socket`.
 ///
 /// Note that only warnings are emitted, in that case.
-pub async fn write_not_found_file(client: SocketAddr, not_found_html: &'static [u8], mut socket: impl AsyncWrite + Unpin) {
+async fn write_not_found_file(client: SocketAddr, not_found_html: &'static [u8], mut socket: impl AsyncWrite + Unpin) {
     debug!("[{client}] Sending back not-found file of {} bytes", not_found_html.len());
 
     // Send back the status code
@@ -101,6 +105,83 @@ pub async fn write_not_found_file(client: SocketAddr, not_found_html: &'static [
     }
 }
 
+/// Given a connection, proxies it to the given host.
+///
+/// This function blocks until either side closes the connection.
+///
+/// # Arguments
+/// - `client`: The address of the newly connected client.
+/// - `socket`: The socket-like to redirect.
+/// - `target`: Some string hostname(:port) pair to resolve to a target address.
+/// - `buf`: Any buffered content to flush to the remote host first.
+///
+/// # Errors
+/// This function fails if the redirect fails at any point.\
+async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + Unpin, target: &str, buf: &[u8]) {
+    // Attempt to resolve the hostname to some address
+    debug!("[{client}] Resolving target address '{target}'...");
+    let addrs = match target.to_socket_addrs() {
+        Ok(addrs) => addrs,
+        Err(err) => {
+            error!("[{client}] {}", trace!(("Failed to resolve '{target}' to a hostname or hostname and port; aborting redirect"), err));
+            drop(socket);
+            return;
+        },
+    };
+
+    // Find the target
+    let mut target_ip: Option<SocketAddr> = None;
+    for addr in addrs {
+        debug!("[{client}] Possible resolution of '{target}': '{addr}'");
+        if let Some(prev) = &mut target_ip {
+            // Prefer IPv6 over IPv4
+            if prev.is_ipv6() && addr.is_ipv4() {
+                *prev = addr;
+            }
+        } else {
+            // Just set it
+            target_ip = Some(addr);
+        }
+    }
+    let target: SocketAddr = match target_ip {
+        Some(target) => target,
+        None => {
+            error!("[{client}] Failed to resolve '{target}' to a hostname or hostname and port; aborting redirect");
+            drop(socket);
+            return;
+        },
+    };
+
+    // Open a new connection
+    debug!("[{client} -> {target}] Opening connection...");
+    let mut target_sock: TcpStream = match TcpStream::connect(target).await {
+        Ok(socket) => socket,
+        Err(err) => {
+            error!("[{client}] {}", trace!(("Failed to connect to resolved host '{target}'"), err));
+            return;
+        },
+    };
+
+    // First, stream the original request
+    debug!("[{client} -> {target}] Flushing buffered request content...");
+    if let Err(err) = target_sock.write_all(buf).await {
+        error!("[{client}] {}", trace!(("Failed to forward buffered request of {} bytes to resolved host '{}'", buf.len(), target), err));
+        return;
+    }
+
+    // Alright, now just copy everything
+    debug!("[{client} -> {target}] Setting up bidirectional copy...");
+    if let Err(err) = tokio::io::copy_bidirectional(&mut socket, &mut target_sock).await {
+        error!("[{client} -> {target}] {}", trace!(("Failed to copy bidirectional"), err));
+        return;
+    }
+
+    // Done
+    debug!("[{client} -> {target}] Connection completed.");
+    drop(target_sock);
+    drop(socket);
+}
+
 
 
 
@@ -145,8 +226,8 @@ pub async fn handle_http(
         if !carriage_return && *b == b'\r' {
             carriage_return = true;
             continue;
-        } else if carriage_return && *b == b'\n' || i == buf_len - 1 {
-            // It's a full line, parse as the host header
+        } else if carriage_return && *b == b'\n' {
+            // It's a full line, parse as the host header _or_ the GET thing
             let line: &[u8] = if i < buf_len - 1 { &buf[ptr..i - 1] } else { &buf[ptr..buf_len] };
             if &line[..6] == b"Host: " {
                 let mut hostname: &[u8] = &line[6..];
@@ -159,6 +240,33 @@ pub async fn handle_http(
                 // Set the hostname
                 host = Some(hostname);
                 break;
+            }
+            #[cfg(feature = "certbot")]
+            if &line[..3] == b"GET " {
+                let mut line: &[u8] = &line[4..];
+
+                // Strip any ending ' HTTP/X'
+                // NOTE: The needle is reversed because we're searching back-to-front
+                let needle: &[u8] = b"/PTTH ";
+                let mut needle_i: usize = 0;
+                for (i, b) in line.iter().enumerate().rev() {
+                    if *b == needle[needle_i] {
+                        needle_i += 1;
+                        if needle_i == needle.len() {
+                            // Found it and strip it
+                            line = &line[..i];
+                        }
+                    } else {
+                        needle_i = 0;
+                    }
+                }
+
+                // The rest is the path; check if it's the certbot path
+                if &line[..CERTBOT_PATH_PREFIX.len()] == CERTBOT_PATH_PREFIX {
+                    // Catch the request, and sent it to the certbot client instead
+                    redirect(client, &mut socket, &config.certbot_hostname, &buf[..buf_len]).await;
+                    return;
+                }
             }
 
             // Update the ptr
@@ -183,38 +291,8 @@ pub async fn handle_http(
     debug!("[{client}] Client provided hostname '{host}'");
 
     // Attempt to find the hostname in the map
-    let mut target: Option<SocketAddr> = None;
-    'resume: {
-        if let Some(host) = config.hostnames.get(host) {
-            // Attempt to resolve the hostname to some address
-            let addrs = match host.to_socket_addrs() {
-                Ok(addrs) => addrs,
-                Err(err) => {
-                    error!(
-                        "{}",
-                        trace!(("Failed to resolve '{host}' to a hostname or hostname and port; pretending we don't know the hostname"), err)
-                    );
-                    break 'resume;
-                },
-            };
-
-            // Find the target
-            for addr in addrs {
-                debug!("[{client}] Possible resolution of '{host}': '{addr}'");
-                if let Some(prev) = &mut target {
-                    // Prefer IPv6 over IPv4
-                    if prev.is_ipv6() && addr.is_ipv4() {
-                        *prev = addr;
-                    }
-                } else {
-                    // Just set it
-                    target = Some(addr);
-                }
-            }
-        }
-    }
-    let target: SocketAddr = match target {
-        Some(target) => target,
+    let target: &str = match config.hostnames.get(host) {
+        Some(target) => target.as_str(),
         None => {
             debug!("[{client}] Client provided unknown hostname '{host}'");
 
@@ -225,32 +303,8 @@ pub async fn handle_http(
         },
     };
 
-    // Open a new connection
-    debug!("[{client} -> {target}] Opening connection...");
-    let mut target_sock: TcpStream = match TcpStream::connect(target).await {
-        Ok(socket) => socket,
-        Err(err) => {
-            error!("[{client}] {}", trace!(("Failed to connect to resolved host '{target}'"), err));
-            return;
-        },
-    };
-
-    // First, stream the original request
-    debug!("[{client} -> {target}] Flushing buffered request content...");
-    if let Err(err) = target_sock.write_all(&buf[..buf_len]).await {
-        error!("[{client}] {}", trace!(("Failed to forward buffered request of {buf_len} bytes to resolved host '{target}'"), err));
-        return;
-    }
-
-    // Alright, now just copy everything
-    debug!("[{client} -> {target}] Setting up bidirectional copy...");
-    if let Err(err) = tokio::io::copy_bidirectional(&mut socket, &mut target_sock).await {
-        error!("[{client} -> {target}] {}", trace!(("Failed to copy bidirectional"), err));
-        return;
-    }
-
-    // Done
-    debug!("[{client} -> {target}] Connection completed.");
+    // The rest is left as a redirect
+    redirect(client, socket, target, &buf[..buf_len]).await;
 }
 
 

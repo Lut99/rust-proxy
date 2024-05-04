@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:25:21
 //  Last edited:
-//    27 Apr 2024, 12:23:19
+//    04 May 2024, 10:07:39
 //  Auto updated?
 //    Yes
 //
@@ -38,7 +38,11 @@ pub struct Config {
     /// Stores hostname -> other hostname maps.
     pub hostnames: HashMap<String, String>,
     /// Stores hostname -> certificate to use.
-    pub certs:     HashMap<String, CertPath>,
+    #[cfg(feature = "https")]
+    pub certs: HashMap<String, CertPath>,
+    /// The hostname on which any certbot server might live.
+    #[cfg(feature = "certbot")]
+    pub certbot_hostname: String,
 
     /// Stores the path to a file to send back if no mapping is found.
     pub not_found_file: PathBuf,
