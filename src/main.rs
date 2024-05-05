@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 21:57:37
 //  Last edited:
-//    04 May 2024, 09:13:20
+//    05 May 2024, 09:28:02
 //  Auto updated?
 //    Yes
 //
@@ -26,7 +26,7 @@ use tokio::net::TcpListener;
 use tokio::runtime::{Builder, Runtime};
 use tokio::signal::unix::{signal, Signal, SignalKind};
 #[cfg(feature = "https")]
-use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 
 
 /***** CONSTANTS *****/
@@ -90,8 +90,8 @@ fn main() {
 
     // Load certificates
     #[cfg(feature = "https")]
-    let tls_config: &'static ServerConfig = match config.load_certstore() {
-        Ok(config) => config,
+    let tls_config: &'static TlsAcceptor = match config.load_certstore() {
+        Ok(config) => Box::leak(Box::new(TlsAcceptor::from(config))),
         Err(err) => {
             error!("{}", err.trace());
             std::process::exit(1);
@@ -233,7 +233,7 @@ fn main() {
     // Free the borrowed values before exiting
     // SAFETY: Getting back ownership is OK, as the functions borrowing it are futures that are guaranteed to no longer exist due to the `shutdown_timeout()`-call.
     #[cfg(feature = "https")]
-    drop(unsafe { Box::from_raw((tls_config as *const ServerConfig) as *mut ServerConfig) });
+    drop(unsafe { Box::from_raw((tls_config as *const TlsAcceptor) as *mut TlsAcceptor) });
     // SAFETY: Getting back ownership is OK, as the functions borrowing it are futures that are guaranteed to no longer exist due to the `shutdown_timeout()`-call.
     drop(unsafe { Box::from_raw((not_found as *const Vec<u8>) as *mut Vec<u8>) });
     // SAFETY: Getting back ownership is OK, as the functions borrowing it are futures that are guaranteed to no longer exist due to the `shutdown_timeout()`-call.

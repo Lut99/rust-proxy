@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:25:21
 //  Last edited:
-//    04 May 2024, 09:34:03
+//    05 May 2024, 09:27:29
 //  Auto updated?
 //    Yes
 //
@@ -22,8 +22,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{error, fs};
 
-#[cfg(feature = "https")]
-use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
 pub use serializable::yaml::Error as YamlError;
 use serializable::yaml::Serializer as YamlSerializer;
@@ -40,18 +38,20 @@ use tokio_rustls::rustls::ServerConfig;
 /// Defines the error returned by [`Config`]'s non-[`serializable`] functions.
 #[derive(Debug)]
 pub enum Error {
+    /// Empty certificate file given.
+    CertificateEmpty { hostname: String, path: PathBuf },
     /// Failed to open the given certificate file.
     CertificateOpen { hostname: String, path: PathBuf, err: std::io::Error },
     /// Failed to read & parse the given certificate file.
     CertificateParse { hostname: String, path: PathBuf, err: std::io::Error },
-    /// Empty certificate file given.
-    CertificateEmpty { hostname: String, path: PathBuf },
+    /// A given private key was unsupported.
+    PrivateKeyDecode { hostname: String, path: PathBuf, err: tokio_rustls::rustls::Error },
+    /// Empty private key file given.
+    PrivateKeyEmpty { hostname: String, path: PathBuf },
     /// Failed to open the given private key file.
     PrivateKeyOpen { hostname: String, path: PathBuf, err: std::io::Error },
     /// Failed to read & parse the given private key file.
     PrivateKeyParse { hostname: String, path: PathBuf, err: std::io::Error },
-    /// Empty private key file given.
-    PrivateKeyEmpty { hostname: String, path: PathBuf },
     /// Failed to read the not found file at the given path.
     NotFoundRead { path: PathBuf, err: std::io::Error },
 }
@@ -60,12 +60,15 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use Error::*;
         match self {
+            CertificateEmpty { hostname, path } => write!(f, "No certificates in certificate file '{}' for hostname '{}'", path.display(), hostname),
             CertificateOpen { hostname, path, .. } => write!(f, "Failed to load certificate file '{}' for hostname '{}'", path.display(), hostname),
             CertificateParse { hostname, path, .. } => write!(f, "Failed to read certificate file '{}' for hostname '{}'", path.display(), hostname),
-            CertificateEmpty { hostname, path } => write!(f, "No certificates in certificate file '{}' for hostname '{}'", path.display(), hostname),
+            PrivateKeyDecode { hostname, path, .. } => {
+                write!(f, "Failed to decode private key in private key file '{}' for hostname '{}'", path.display(), hostname)
+            },
+            PrivateKeyEmpty { hostname, path } => write!(f, "No private keys in private key file '{}' for hostname '{}'", path.display(), hostname),
             PrivateKeyOpen { hostname, path, .. } => write!(f, "Failed to load private key file '{}' for hostname '{}'", path.display(), hostname),
             PrivateKeyParse { hostname, path, .. } => write!(f, "Failed to read private key file '{}' for hostname '{}'", path.display(), hostname),
-            PrivateKeyEmpty { hostname, path } => write!(f, "No private keys in private key file '{}' for hostname '{}'", path.display(), hostname),
             NotFoundRead { path, .. } => write!(f, "Failed to load not found file at '{}'", path.display()),
         }
     }
@@ -75,12 +78,13 @@ impl error::Error for Error {
     fn source(&self) -> Option<&(dyn 'static + error::Error)> {
         use Error::*;
         match self {
+            CertificateEmpty { .. } => None,
             CertificateOpen { err, .. } => Some(err),
             CertificateParse { err, .. } => Some(err),
-            CertificateEmpty { .. } => None,
+            PrivateKeyDecode { err, .. } => Some(err),
+            PrivateKeyEmpty { .. } => None,
             PrivateKeyOpen { err, .. } => Some(err),
             PrivateKeyParse { err, .. } => Some(err),
-            PrivateKeyEmpty { .. } => None,
             NotFoundRead { err, .. } => Some(err),
         }
     }
@@ -156,19 +160,19 @@ impl Config {
 
     /// Loads a rustls [`ServerConfig`] from the internally specified certificate- and private key paths.
     ///
-    /// Do _not_ call this function multiple times willy-nilly, as the resulting reference is not dropped automatically and may result in memory being leaked and growing full.
-    ///
     /// # Returns
-    /// A loaded, and "made static" (don't ask me how please) [`ServerConfig`].
+    /// A loaded [`ServerConfig`] wrapped in an [`Arc`].
     ///
     /// # Errors
     /// This function fails if we failed to load the file from the `not_found_file` path in the config.
     #[cfg(feature = "https")]
-    pub fn load_certstore(&self) -> Result<&'static ServerConfig, Error> {
+    pub fn load_certstore(&self) -> Result<Arc<ServerConfig>, Error> {
         use std::fs::File;
 
         use log::debug;
-        use rustls_pki_types::PrivateKeyDer;
+        use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+        use tokio_rustls::rustls::crypto;
+        use tokio_rustls::rustls::sign::SigningKey;
 
         let mut store: HashMap<String, Arc<CertifiedKey>> = HashMap::with_capacity(self.certs.len());
         for (hostname, path) in self.certs.iter() {
@@ -209,19 +213,22 @@ impl Config {
             };
 
             // Convert it to an appropriate key
-            let key: RSASigningKey = ();
+            let key: Arc<dyn SigningKey> = match crypto::aws_lc_rs::sign::any_supported_type(&key) {
+                Ok(key) => key,
+                Err(err) => return Err(Error::PrivateKeyDecode { hostname: hostname.clone(), path: path.key.clone(), err }),
+            };
 
             // OK, add them
             debug!("Loaded {} certificate(s), 1 key(s) for '{}'", certs.len(), hostname);
-            store.insert(hostname.clone(), Arc::new(CertifiedKey { cert: certs, key: Arc::new(key), ocsp: None }));
+            store.insert(hostname.clone(), Arc::new(CertifiedKey { cert: certs, key, ocsp: None }));
         }
 
         // Build a server config
-        let tls_config: Box<ServerConfig> =
-            Box::new(ServerConfig::builder().with_no_client_auth().with_cert_resolver(Arc::new(CertificateResolver { certstore: store })));
+        let tls_config: Arc<ServerConfig> =
+            Arc::new(ServerConfig::builder().with_no_client_auth().with_cert_resolver(Arc::new(CertificateResolver { certstore: store })));
 
         // Done, leak the pointer
-        Ok(Box::leak(tls_config))
+        Ok(tls_config)
     }
 }
 impl Serializable<YamlSerializer<Config>> for Config {}

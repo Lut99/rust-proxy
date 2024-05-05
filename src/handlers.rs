@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:31:03
 //  Last edited:
-//    04 May 2024, 09:12:33
+//    05 May 2024, 09:32:43
 //  Auto updated?
 //    Yes
 //
@@ -20,7 +20,7 @@ use log::{debug, error};
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use tokio::net::TcpStream;
 #[cfg(feature = "https")]
-use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
 
@@ -127,7 +127,7 @@ async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + 
         Ok(addrs) => addrs,
         Err(err) => {
             error!("[{client}] ABORT: {}", trace!(("Failed to resolve '{target}' to a hostname or hostname and port; aborting redirect"), err));
-            drop(socket);
+            let _ = socket.shutdown().await;
             return;
         },
     };
@@ -150,7 +150,7 @@ async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + 
         Some(target) => target,
         None => {
             error!("[{client}] ABORT: Failed to resolve '{target}' to a hostname or hostname and port; aborting redirect");
-            drop(socket);
+            let _ = socket.shutdown().await;
             return;
         },
     };
@@ -161,6 +161,7 @@ async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + 
         Ok(socket) => socket,
         Err(err) => {
             error!("[{client}] ABORT: {}", trace!(("Failed to connect to resolved host '{target}'"), err));
+            let _ = socket.shutdown().await;
             return;
         },
     };
@@ -169,6 +170,8 @@ async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + 
     debug!("[{client} -> {target}] Flushing buffered request content...");
     if let Err(err) = target_sock.write_all(buf).await {
         error!("[{client}] ABORT: {}", trace!(("Failed to forward buffered request of {} bytes to resolved host '{}'", buf.len(), target), err));
+        let _ = target_sock.shutdown().await;
+        let _ = socket.shutdown().await;
         return;
     }
 
@@ -176,13 +179,15 @@ async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + 
     debug!("[{client} -> {target}] Setting up bidirectional copy...");
     if let Err(err) = tokio::io::copy_bidirectional(&mut socket, &mut target_sock).await {
         error!("[{client} -> {target}] ABORT: {}", trace!(("Failed to copy bidirectional"), err));
+        let _ = target_sock.shutdown().await;
+        let _ = socket.shutdown().await;
         return;
     }
 
     // Done
     debug!("[{client} -> {target}] Connection completed.");
-    drop(target_sock);
-    drop(socket);
+    let _ = target_sock.shutdown().await;
+    let _ = socket.shutdown().await;
 }
 
 
@@ -214,11 +219,13 @@ pub async fn handle_http(
         Ok(len) => len,
         Err(err) => {
             debug!("[{client}] ABORT: {}", trace!(("Failed to read stream"), err));
+            let _ = socket.shutdown().await;
             return;
         },
     };
     if buf_len == 0 {
         debug!("[{client}] ABORT: Client closed connection before anything is sent.");
+        let _ = socket.shutdown().await;
         return;
     }
 
@@ -278,8 +285,7 @@ pub async fn handle_http(
                     );
 
                     // Catch the request, and sent it to the certbot client instead
-                    redirect(client, &mut socket, &config.certbot_hostname, &buf[..buf_len]).await;
-                    return;
+                    return redirect(client, socket, &config.certbot_hostname, &buf[..buf_len]).await;
                 }
             }
 
@@ -292,6 +298,7 @@ pub async fn handle_http(
         Some(host) => host,
         None => {
             debug!("[{client}] ABORT: Client did not provide hostname within the first {BUFFER_LEN} bytes.");
+            let _ = socket.shutdown().await;
             return;
         },
     };
@@ -299,6 +306,7 @@ pub async fn handle_http(
         Ok(host) => host,
         Err(err) => {
             debug!("[{client}] ABORT: {}", trace!(("Client provided non-UTF-8 hostname '{:#X?}'", host), err));
+            let _ = socket.shutdown().await;
             return;
         },
     };
@@ -312,7 +320,7 @@ pub async fn handle_http(
 
             // Send the file back
             write_not_found_file(client, not_found_html, &mut socket).await;
-            drop(socket);
+            let _ = socket.shutdown().await;
             return;
         },
     };
@@ -328,7 +336,7 @@ pub async fn handle_http(
 /// # Arguments
 /// - `config`: The [`Config`] that provides us with proxy mappings and certificate paths and the like.
 /// - `not_found_html`: Some bytes to send back if nothing was found.
-/// - `tls_config`: Some [`ServerConfig`] that configures how we accept TLS requests.
+/// - `acceptor`: Some [`TlsAcceptor`] that configures how we accept TLS requests.
 /// - `client`: The address of the newly connected client.
 /// - `socket`: The accepted client socket we're connecting over. Note that it's implemented in the abstract to be compatible with processing HTTPS connections.
 ///
@@ -338,8 +346,20 @@ pub async fn handle_http(
 pub async fn handle_https(
     config: &'static Config,
     not_found_html: &'static [u8],
-    tls_config: &'static ServerConfig,
+    acceptor: &'static TlsAcceptor,
     client: SocketAddr,
-    socket: impl AsyncRead + AsyncWrite,
+    socket: impl AsyncRead + AsyncWrite + Unpin,
 ) {
+    // Simply accept the socket with a rustls TLS wrapper
+    use tokio_rustls::server::TlsStream;
+    let socket: TlsStream<_> = match acceptor.accept(socket).await {
+        Ok(socket) => socket,
+        Err(err) => {
+            debug!("[{client}] ABORT: {}", trace!(("Failed to accept client TLS"), err));
+            return;
+        },
+    };
+
+    // Then handle as any other connection
+    return handle_http(config, not_found_html, client, socket).await;
 }
