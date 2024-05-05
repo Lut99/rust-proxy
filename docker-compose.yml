@@ -1,0 +1,24 @@
+services:
+  ##### rust-proxy #####
+  # The proxy server itself
+  rust-proxy:
+    build:
+      dockerfile: ./Dockerfile
+      context: .
+      target: run
+    container_name: rust-proxy
+    restart: always
+    command:
+    - --config-path
+    - /proxy.yml
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - ./assets:/assets:ro
+    - ./proxy.yml:/proxy.yml:ro
+    # NOTE: Certificate volumes are injected here by `start.sh`
+
+networks:
+  rust-proxy:
+    driver: default
