@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:25:21
 //  Last edited:
-//    05 May 2024, 09:27:29
+//    06 May 2024, 18:57:18
 //  Auto updated?
 //    Yes
 //
@@ -120,12 +120,9 @@ impl ResolvesServerCert for CertificateResolver {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     /// The address on which to bind the server.
-    pub address:    IpAddr,
-    /// The port where the HTTP server is hosted.
-    pub http_port:  u16,
-    /// The port where the HTTPS server is hosted.
-    #[cfg(feature = "https")]
-    pub https_port: u16,
+    pub address: IpAddr,
+    /// The ports on which we create openings.
+    pub ports:   Vec<u16>,
 
     /// Stores hostname -> other hostname maps.
     pub hostnames: HashMap<String, String>,

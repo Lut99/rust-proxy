@@ -4,7 +4,7 @@
 //  Created:
 //    25 Apr 2024, 22:31:03
 //  Last edited:
-//    05 May 2024, 09:32:43
+//    06 May 2024, 19:54:30
 //  Auto updated?
 //    Yes
 //
@@ -19,6 +19,8 @@ use error_trace::trace;
 use log::{debug, error};
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use tokio::net::TcpStream;
+#[cfg(feature = "https")]
+use tokio_rustls::server::TlsStream;
 #[cfg(feature = "https")]
 use tokio_rustls::TlsAcceptor;
 
@@ -195,8 +197,6 @@ async fn redirect(client: SocketAddr, mut socket: impl AsyncRead + AsyncWrite + 
 
 
 /***** LIBRARY *****/
-/// Handles re
-
 /// Handles incoming HTTP connections.
 ///
 /// # Arguments
@@ -338,7 +338,7 @@ pub async fn handle_http(
 /// - `not_found_html`: Some bytes to send back if nothing was found.
 /// - `acceptor`: Some [`TlsAcceptor`] that configures how we accept TLS requests.
 /// - `client`: The address of the newly connected client.
-/// - `socket`: The accepted client socket we're connecting over. Note that it's implemented in the abstract to be compatible with processing HTTPS connections.
+/// - `socket`: The client connection to encrypt.
 ///
 /// # Errors
 /// This function may error if something went wrong.
@@ -351,7 +351,7 @@ pub async fn handle_https(
     socket: impl AsyncRead + AsyncWrite + Unpin,
 ) {
     // Simply accept the socket with a rustls TLS wrapper
-    use tokio_rustls::server::TlsStream;
+    debug!("[{client}] Negotiating TLS...");
     let socket: TlsStream<_> = match acceptor.accept(socket).await {
         Ok(socket) => socket,
         Err(err) => {
